@@ -60,9 +60,31 @@ function calcReturns(item: ScenarioItem) {
   const noWht = item.category === "ut" || item.category === "dividend" || item.category === "pfca";
   const wht = noWht ? 0 : interest * 0.10;
   const netWht = gross - wht;
-  const iit = (item.category === "dividend" || item.category === "pfca") ? 0 : interest * 0.36;
-  const netIit = gross - iit;
-  return { gross, interest, fxGain, netWht, netIit };
+  const iitLiable = item.category !== "dividend" && item.category !== "pfca";
+  return { gross, interest, fxGain, netWht, iitLiable };
+}
+
+/** YoA 2025/2026 Sri Lanka resident IIT — personal relief then progressive slabs */
+const PERSONAL_RELIEF = 1_800_000;
+const IIT_SLABS: { upTo: number; rate: number }[] = [
+  { upTo: 1_000_000, rate: 0.06 },
+  { upTo: 500_000, rate: 0.18 },
+  { upTo: 500_000, rate: 0.24 },
+  { upTo: 500_000, rate: 0.30 },
+  { upTo: Infinity, rate: 0.36 },
+];
+
+function calcProgressiveIit(taxableIncome: number): { relief: number; taxableAfterRelief: number; tax: number } {
+  const relief = Math.min(PERSONAL_RELIEF, Math.max(0, taxableIncome));
+  let remaining = Math.max(0, taxableIncome - PERSONAL_RELIEF);
+  let tax = 0;
+  for (const slab of IIT_SLABS) {
+    if (remaining <= 0) break;
+    const slice = Math.min(remaining, slab.upTo);
+    tax += slice * slab.rate;
+    remaining -= slice;
+  }
+  return { relief, taxableAfterRelief: Math.max(0, taxableIncome - PERSONAL_RELIEF), tax };
 }
 
 function portfolioToItems(p: PortfolioState): ScenarioItem[] {
@@ -93,16 +115,17 @@ function portfolioToItems(p: PortfolioState): ScenarioItem[] {
 }
 
 function calcTotals(items: ScenarioItem[]) {
-  let invested = 0, gross = 0, netWht = 0, netIit = 0;
+  let invested = 0, gross = 0, netWht = 0;
   let coreInvested = 0, coreGross = 0;
   let taxFreeInvested = 0, taxFreeGross = 0;
   let pfcaInvested = 0, usdCapitalGain = 0;
+  let iitAssessable = 0; // FD + UT + Treasury annual income (IIT-liable)
   items.forEach(it => {
     const r = calcReturns(it);
     invested += it.amount;
     gross += r.gross;
     netWht += r.netWht;
-    netIit += r.netIit;
+    if (r.iitLiable) iitAssessable += r.interest;
     if (it.category === "dividend" || it.category === "pfca") {
       taxFreeInvested += it.amount;
       taxFreeGross += r.interest; // interest / dividend only
@@ -115,12 +138,20 @@ function calcTotals(items: ScenarioItem[]) {
       coreGross += r.gross;
     }
   });
+  const progressive = calcProgressiveIit(iitAssessable);
+  const netIit = gross - progressive.tax; // annual; divide by 12 for monthly display
   const coreYield = coreInvested > 0 ? (coreGross / coreInvested) * 100 : 0;
   const taxFreeYield = taxFreeInvested > 0 ? (taxFreeGross / taxFreeInvested) * 100 : 0;
   const usdCapitalGainYield = pfcaInvested > 0 ? (usdCapitalGain / pfcaInvested) * 100 : 0;
   const combinedYield = invested > 0 ? (gross / invested) * 100 : 0;
+  const effectiveIitRate = iitAssessable > 0 ? (progressive.tax / iitAssessable) * 100 : 0;
   return {
     invested, gross, netWht, netIit,
+    iitAssessable,
+    iitRelief: progressive.relief,
+    iitTaxable: progressive.taxableAfterRelief,
+    iitTax: progressive.tax,
+    effectiveIitRate,
     coreInvested, coreGross, coreYield,
     taxFreeInvested, taxFreeGross, taxFreeYield,
     usdCapitalGain, usdCapitalGainYield,
@@ -251,7 +282,7 @@ export default function ScenariosPage() {
           <FlaskConical size={28} style={{color:"var(--color-teal)"}} />
           <h1 className="page-title" style={{margin:0}}>What-If Scenario Planner</h1>
         </div>
-        <p className="page-subtitle">Model different investment strategies and compare income projections side by side against your portfolio.</p>
+        <p className="page-subtitle">Model different investment strategies and compare income after WHT and progressive IIT (YoA 2025/26: Rs. 1.8M relief, then 6% → 18% → 24% → 30% → 36%).</p>
       </div>
 
       <div className="sc-toolbar">
@@ -315,7 +346,13 @@ export default function ScenariosPage() {
         <div className="sc-inc-row">
           <div className="sc-inc-col"><span className="sc-clbl">Gross {period==="monthly"?"Monthly":"Annual"}</span><span className="sc-cval">{fmt(baseTot.gross/div)}</span></div>
           <div className="sc-inc-col"><span className="sc-clbl">Net (After WHT)</span><span className="sc-cval sc-em">{fmt(baseTot.netWht/div)}</span></div>
-          <div className="sc-inc-col"><span className="sc-clbl">Net (After 36% IIT)</span><span className="sc-cval sc-pu">{fmt(baseTot.netIit/div)}</span></div>
+          <div className="sc-inc-col">
+            <span className="sc-clbl">Net (After Progressive IIT)</span>
+            <span className="sc-cval sc-pu">{fmt(baseTot.netIit/div)}</span>
+            <span className="sc-iit-hint">
+              Tax {fmt(baseTot.iitTax/div)} · Relief {fmt(PERSONAL_RELIEF)} · Eff. {pct(baseTot.effectiveIitRate)}
+            </span>
+          </div>
         </div>
         {baseline.length > 0 && (
           <div className="sc-base-pills">
@@ -399,7 +436,14 @@ export default function ScenariosPage() {
                   )}
                   <div className="sc-spill"><span className="sc-plbl">Gross {period==="monthly"?"Monthly":"Annual"}</span><span className="sc-pval">{fmt(tot.gross/div)}</span></div>
                   <div className="sc-spill"><span className="sc-plbl">Net (WHT)</span><span className="sc-pval sc-em">{fmt(tot.netWht/div)}</span></div>
-                  <div className="sc-spill"><span className="sc-plbl">Net (IIT 36%)</span><span className="sc-pval sc-pu">{fmt(tot.netIit/div)}</span></div>
+                  <div className="sc-spill">
+                    <span className="sc-plbl">Net (Prog. IIT)</span>
+                    <span className="sc-pval sc-pu">{fmt(tot.netIit/div)}</span>
+                  </div>
+                  <div className="sc-spill">
+                    <span className="sc-plbl">IIT Payable</span>
+                    <span className="sc-pval" style={{color:"#f87171"}}>{fmt(tot.iitTax/div)}</span>
+                  </div>
                   <div className="sc-spill"><span className="sc-plbl">Items</span><span className="sc-pval">{s.items.length}</span></div>
                 </div>
                 {s.expanded && (
@@ -410,7 +454,7 @@ export default function ScenariosPage() {
                           <thead><tr>
                             <th>Investment</th><th>Invested</th><th>Rate</th>
                             <th>Gross {period==="monthly"?"Monthly":"Annual"}</th>
-                            <th>Net (WHT)</th><th>Net (IIT)</th><th></th>
+                            <th>Net (WHT)</th><th>IIT Status</th><th></th>
                           </tr></thead>
                           <tbody>
                             {s.items.map(item => {
@@ -427,13 +471,29 @@ export default function ScenariosPage() {
                                   <td style={{color:s.color,fontWeight:700}}>{pct(item.rate)}</td>
                                   <td style={{fontFamily:"var(--font-display)"}}>{fmt(r.gross/div)}</td>
                                   <td className="sc-em" style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(r.netWht/div)}</td>
-                                  <td className="sc-pu" style={{fontFamily:"var(--font-display)"}}>{fmt(r.netIit/div)}</td>
+                                  <td style={{fontSize:"0.72rem",fontWeight:700,color:r.iitLiable?"#d8b4fe":"var(--color-emerald)"}}>
+                                    {r.iitLiable ? "In progressive pool" : "Tax-free"}
+                                  </td>
                                   <td><button className="sc-ibtn dng" onClick={()=>removeItem(s.id,item.id)}><Trash2 size={12}/></button></td>
                                 </tr>
                               );
                             })}
                           </tbody>
                         </table>
+                      </div>
+                    )}
+                    {tot.iitAssessable > 0 && (
+                      <div className="sc-iit-box">
+                        <div className="sc-iit-title">Progressive IIT (YoA 2025/26)</div>
+                        <div className="sc-iit-grid">
+                          <span>IIT-liable income (FD+UT+Treasury)</span><strong>{fmt(tot.iitAssessable)}</strong>
+                          <span>Personal relief</span><strong>−{fmt(tot.iitRelief)}</strong>
+                          <span>Taxable after relief</span><strong>{fmt(tot.iitTaxable)}</strong>
+                          <span>IIT payable</span><strong style={{color:"#f87171"}}>{fmt(tot.iitTax)}</strong>
+                          <span>Effective rate on liable income</span><strong className="sc-pu">{pct(tot.effectiveIitRate)}</strong>
+                          <span>Net after progressive IIT</span><strong className="sc-pu">{fmt(tot.netIit)} /yr · {fmt(tot.netIit/12)} /mo</strong>
+                        </div>
+                        <div className="sc-iit-slabs">Slabs after relief: first 1M @ 6% · next 0.5M @ 18% · next 0.5M @ 24% · next 0.5M @ 30% · balance @ 36%. Dividends &amp; PFCA excluded.</div>
                       </div>
                     )}
                     <div className="sc-addform">
@@ -496,7 +556,7 @@ export default function ScenariosPage() {
                         )}
                         {cat==="ut" && (
                           <div className="sc-fg" style={{justifyContent:"center",paddingTop:"22px"}}>
-                            <span style={{fontSize:"0.72rem",fontWeight:700,color:"#d8b4fe"}}>36% IIT applies</span>
+                            <span style={{fontSize:"0.72rem",fontWeight:700,color:"#d8b4fe"}}>In progressive IIT pool</span>
                           </div>
                         )}
                         {(cat==="dividend" || cat==="pfca") && (
@@ -536,11 +596,11 @@ export default function ScenariosPage() {
                     <th>Strategy</th><th>Total Invested</th>
                     <th>FD+UT+Treasury</th><th>Div+PFCA</th><th>USD Cap. Gain</th><th>All Combined</th>
                     <th>Gross {period==="monthly"?"Monthly":"Annual"}</th>
-                    <th>Net (After WHT)</th><th>Net (After 36% IIT)</th><th>vs Baseline</th>
+                    <th>Net (After WHT)</th><th>IIT Payable</th><th>Net (Prog. IIT)</th><th>vs Baseline</th>
                   </tr></thead>
                   <tbody>
                     {allRows.map((row, idx) => {
-                      const dv = idx === 0 ? null : row.totals.netWht - baseTot.netWht;
+                      const dv = idx === 0 ? null : row.totals.netIit - baseTot.netIit;
                       return (
                         <tr key={idx} style={idx===0?{background:"rgba(255,255,255,0.006)"}:{}}>
                           <td><div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{width:"9px",height:"9px",borderRadius:"50%",background:row.color,flexShrink:0}}/><span style={{fontWeight:700,color:row.color}}>{row.name}</span></div></td>
@@ -551,7 +611,8 @@ export default function ScenariosPage() {
                           <td className="sc-em" style={{fontWeight:700}}>{row.totals.invested > 0 ? pct(row.totals.combinedYield) : "—"}</td>
                           <td style={{fontFamily:"var(--font-display)"}}>{fmt(row.totals.gross/div)}</td>
                           <td className="sc-em" style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.netWht/div)}</td>
-                          <td className="sc-pu" style={{fontFamily:"var(--font-display)"}}>{fmt(row.totals.netIit/div)}</td>
+                          <td style={{fontFamily:"var(--font-display)",fontWeight:700,color:"#f87171"}}>{fmt(row.totals.iitTax/div)}</td>
+                          <td className="sc-pu" style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.netIit/div)}</td>
                           <td>
                             {dv!==null&&<span className={"sc-dbdg"+(dv>=0?" pos":" neg")}>{dv>=0?"+":""}{fmt(Math.abs(dv)/div)}/{period==="monthly"?"mo":"yr"}</span>}
                             {idx===0&&<span style={{color:"var(--text-muted)",fontSize:"0.72rem"}}>Reference</span>}
@@ -563,11 +624,11 @@ export default function ScenariosPage() {
                 </table>
               </div>
               {scenarios.length > 0 && (() => {
-                const best = allRows.slice(1).reduce((a,b)=>a.totals.netWht>b.totals.netWht?a:b);
+                const best = allRows.slice(1).reduce((a,b)=>a.totals.netIit>b.totals.netIit?a:b);
                 return (
                   <div className="sc-bestbdg">
                     <TrendingUp size={16} style={{color:best.color}}/>
-                    <span><strong style={{color:best.color}}>{best.name}</strong> yields the highest net income after WHT &mdash; <strong>{fmt(best.totals.netWht/div)}/{period==="monthly"?"mo":"yr"}</strong></span>
+                    <span><strong style={{color:best.color}}>{best.name}</strong> yields the highest net income after progressive IIT &mdash; <strong>{fmt(best.totals.netIit/div)}/{period==="monthly"?"mo":"yr"}</strong></span>
                   </div>
                 );
               })()}
@@ -607,6 +668,12 @@ export default function ScenariosPage() {
         .sc-inc-col{display:flex;flex-direction:column;gap:4px}
         .sc-clbl{font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em}
         .sc-cval{font-family:var(--font-display);font-size:1.15rem;font-weight:800}
+        .sc-iit-hint{font-size:.65rem;color:var(--text-muted);font-weight:600;margin-top:2px;line-height:1.3}
+        .sc-iit-box{margin:0 0 1rem;padding:12px 14px;border-radius:10px;border:1px solid rgba(216,180,254,.2);background:rgba(216,180,254,.05)}
+        .sc-iit-title{font-size:.72rem;font-weight:800;color:#d8b4fe;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+        .sc-iit-grid{display:grid;grid-template-columns:1fr auto;gap:4px 16px;font-size:.75rem;color:var(--text-secondary)}
+        .sc-iit-grid strong{font-family:var(--font-display);font-weight:700;color:var(--text-primary);text-align:right}
+        .sc-iit-slabs{margin-top:8px;font-size:.65rem;color:var(--text-muted);line-height:1.4}
         .sc-base-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:.5rem;padding-top:.75rem;border-top:1px solid var(--border-color)}
         .sc-bpill{display:flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid;border-radius:20px;background:rgba(255,255,255,.02)}
         .sc-bpl{font-size:.72rem;font-weight:700;white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary)}
