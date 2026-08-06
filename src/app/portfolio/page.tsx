@@ -54,6 +54,7 @@ interface PfcaFdInvestment {
   rate: number;              // Interest rate (% p.a.)
   maturityType: "monthly" | "quarterly" | "maturity";
   exchangeRate: number;      // LKR per USD — for portfolio LKR totals
+  depreciationRate: number;  // Est. annual LKR depreciation vs USD (% p.a.)
 }
 
 interface PortfolioState {
@@ -128,6 +129,7 @@ export default function PortfolioPage() {
   const [pfcaRate, setPfcaRate] = useState<string>("");
   const [pfcaMaturity, setPfcaMaturity] = useState<"monthly" | "quarterly" | "maturity">("maturity");
   const [pfcaFx, setPfcaFx] = useState<string>("310");
+  const [pfcaDepreciation, setPfcaDepreciation] = useState<string>("5");
 
   // Load from local storage
   useEffect(() => {
@@ -346,7 +348,9 @@ export default function PortfolioPage() {
     const amountNum = parseFloat(pfcaAmount);
     const rateNum = parseFloat(pfcaRate);
     const fxNum = parseFloat(pfcaFx) || 310;
+    const depNum = parseFloat(pfcaDepreciation);
     if (!pfcaInst.trim() || !amountNum || !rateNum) return;
+    if (Number.isNaN(depNum) || depNum < 0) return;
 
     const newItem: PfcaFdInvestment = {
       id: Date.now().toString(),
@@ -355,6 +359,7 @@ export default function PortfolioPage() {
       rate: rateNum,
       maturityType: pfcaMaturity,
       exchangeRate: fxNum,
+      depreciationRate: depNum,
     };
 
     const updated = {
@@ -393,17 +398,13 @@ export default function PortfolioPage() {
   };
 
   const calculateUtReturns = (item: UtInvestment) => {
+    // Declared UT yields are already net of WHT, so no further WHT is deducted.
     const annualGross = item.amount * (item.rate / 100);
-    const wht = 0; // WHT free!
+    const wht = 0;
     const netWht = annualGross;
-    
-    // Check if the fund is FIOF
-    const isFiof = item.fund.toUpperCase().includes("FIOF") || 
-                   item.fund.toLowerCase().includes("first income opportunities");
-    
-    const iit36 = isFiof ? annualGross * 0.36 : 0;
+    const iit36 = annualGross * 0.36;
     const netIit = annualGross - iit36;
-    
+
     return { annualGross, wht, netWht, iit36, netIit };
   };
 
@@ -438,16 +439,27 @@ export default function PortfolioPage() {
     return { annualGross, wht: 0, netWht: annualGross, iit36: 0, netIit: annualGross };
   };
 
-  // PFCA FDs are tax-free; interest in USD, LKR equivalent via exchange rate
+  // PFCA FDs are tax-free; LKR return = USD interest + LKR depreciation valuation
   const calculatePfcaReturns = (item: PfcaFdInvestment) => {
-    const annualInterestUsd = item.amount * (item.rate / 100);
     const fx = item.exchangeRate || 310;
+    const dep = item.depreciationRate ?? 5; // historical long-run default
     const investedLkr = item.amount * fx;
-    const annualGross = annualInterestUsd * fx; // LKR for portfolio totals
+    const annualInterestUsd = item.amount * (item.rate / 100);
+    const endFx = fx * (1 + dep / 100);
+    // Interest converted at year-end FX + FX gain on principal
+    const interestLkr = annualInterestUsd * endFx;
+    const fxValuationLkr = item.amount * (endFx - fx);
+    const annualGross = interestLkr + fxValuationLkr; // effective LKR gain
+    const effectiveYield = investedLkr > 0 ? (annualGross / investedLkr) * 100 : 0;
     return {
       annualInterestUsd,
       investedLkr,
+      interestLkr,
+      fxValuationLkr,
+      endFx,
+      depreciationRate: dep,
       annualGross,
+      effectiveYield,
       wht: 0,
       netWht: annualGross,
       iit36: 0,
@@ -512,11 +524,13 @@ export default function PortfolioPage() {
     acc.investedUsd += item.amount;
     acc.gross += res.annualGross;
     acc.grossUsd += res.annualInterestUsd;
+    acc.interestLkr += res.interestLkr;
+    acc.fxValuationLkr += res.fxValuationLkr;
     acc.netWht += res.netWht;
     acc.whtDeducted += res.wht;
     acc.netIit += res.netIit;
     return acc;
-  }, { invested: 0, investedUsd: 0, gross: 0, grossUsd: 0, netWht: 0, whtDeducted: 0, netIit: 0 });
+  }, { invested: 0, investedUsd: 0, gross: 0, grossUsd: 0, interestLkr: 0, fxValuationLkr: 0, netWht: 0, whtDeducted: 0, netIit: 0 });
 
   const grandTotalInvested = fdTotals.invested + utTotals.invested + treasuryTotals.invested + dividendTotals.invested + pfcaTotals.invested;
   const grandTotalGross = fdTotals.gross + utTotals.gross + treasuryTotals.gross + dividendTotals.gross + pfcaTotals.gross;
@@ -532,6 +546,7 @@ export default function PortfolioPage() {
   const taxFreeInvested = dividendTotals.invested + pfcaTotals.invested;
   const taxFreeGross = dividendTotals.gross + pfcaTotals.gross;
   const taxFreeYield = taxFreeInvested > 0 ? (taxFreeGross / taxFreeInvested) * 100 : 0;
+  const combinedYield = grandTotalInvested > 0 ? (grandTotalGross / grandTotalInvested) * 100 : 0;
 
   // Preset rates autocomplete when forms load
   useEffect(() => {
@@ -580,6 +595,13 @@ export default function PortfolioPage() {
                     <span className="split-yield-lbl">Dividend + PFCA</span>
                     <span className="split-yield-val">{taxFreeYield.toFixed(2)}%</span>
                     <span className="split-yield-cap">{formatLKR(taxFreeInvested)}</span>
+                  </div>
+                )}
+                {grandTotalInvested > 0 && (
+                  <div className="split-yield-badge combined">
+                    <span className="split-yield-lbl">All Combined</span>
+                    <span className="split-yield-val">{combinedYield.toFixed(2)}%</span>
+                    <span className="split-yield-cap">{formatLKR(grandTotalInvested)}</span>
                   </div>
                 )}
               </div>
@@ -805,16 +827,16 @@ export default function PortfolioPage() {
           <div className="divider-h" style={{ margin: "8px 0" }} />
           <div className="category-metrics-list">
             <div className="metric-item">
-              <span>Est. {incomePeriod === "monthly" ? "Monthly" : "Yearly"} Interest:</span>
-              <span className="val-text" style={{ color: "#f43f5e" }}>{formatLKR(incomePeriod === "monthly" ? pfcaTotals.gross / 12 : pfcaTotals.gross)}</span>
+              <span>FD Interest (LKR):</span>
+              <span className="val-text" style={{ color: "#f43f5e" }}>{formatLKR(incomePeriod === "monthly" ? pfcaTotals.interestLkr / 12 : pfcaTotals.interestLkr)}</span>
             </div>
             <div className="metric-item">
-              <span>Interest (USD):</span>
-              <span className="val-text text-emerald">{formatUSD(incomePeriod === "monthly" ? pfcaTotals.grossUsd / 12 : pfcaTotals.grossUsd)}</span>
+              <span>LKR Valuation (FX):</span>
+              <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? pfcaTotals.fxValuationLkr / 12 : pfcaTotals.fxValuationLkr)}</span>
             </div>
             <div className="metric-item">
-              <span>Tax Deduction:</span>
-              <span className="val-text text-emerald">None (Tax-Free)</span>
+              <span>Total Effective {incomePeriod === "monthly" ? "Monthly" : "Yearly"}:</span>
+              <span className="val-text" style={{ color: "#fb7185" }}>{formatLKR(incomePeriod === "monthly" ? pfcaTotals.gross / 12 : pfcaTotals.gross)}</span>
             </div>
           </div>
         </div>
@@ -1168,8 +1190,6 @@ export default function PortfolioPage() {
                       // Calculate initial investment capital if earnings are specified
                       const initialCapital = item.earnings ? item.amount - item.earnings : item.amount;
                       const growthPercent = item.earnings ? (item.earnings / initialCapital) * 100 : 0;
-                      const isFiof = item.fund.toUpperCase().includes("FIOF") || 
-                                     item.fund.toLowerCase().includes("first income opportunities");
 
                       return (
                         <div key={item.id} className="glass-card investment-item-card animate-fade-in">
@@ -1242,36 +1262,26 @@ export default function PortfolioPage() {
                                   <td className="period-col">Monthly</td>
                                   <td>{formatLKR(res.annualGross / 12)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht / 12)}</td>
-                                  <td className="text-emerald">{formatLKR(res.netIit / 12)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit / 12)}</td>
                                 </tr>
                                 <tr>
                                   <td className="period-col">Annually</td>
                                   <td>{formatLKR(res.annualGross)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht)}</td>
-                                  <td className="text-emerald">{formatLKR(res.netIit)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit)}</td>
                                 </tr>
                               </tbody>
                             </table>
                           </div>
 
-                          {/* Dynamic tax treatment strip based on FIOF status */}
-                          <div className={`tax-comparisons-strip ${isFiof ? "red-tax-strip" : "green-tax-strip"}`} style={{ marginTop: "8px" }}>
+                          <div className="tax-comparisons-strip red-tax-strip" style={{ marginTop: "8px" }}>
                             <div className="tax-sub-item">
                               <ShieldCheck size={12} style={{ color: "var(--color-emerald)", marginRight: "4px" }} />
-                              <span>WHT: <strong>Tax-Free (0%)</strong></span>
+                              <span>WHT: <strong>Already deducted at source (yield is net)</strong></span>
                             </div>
                             <div className="tax-sub-item">
-                              {isFiof ? (
-                                <>
-                                  <Info size={12} style={{ color: "#ef4444", marginRight: "4px" }} />
-                                  <span>Individual Income Tax (IIT): <strong style={{ color: "#ef4444" }}>Subject to Tax (36% IIT applies)</strong></span>
-                                </>
-                              ) : (
-                                <>
-                                  <ShieldCheck size={12} style={{ color: "var(--color-emerald)", marginRight: "4px" }} />
-                                  <span>Individual Income Tax (IIT): <strong>Tax-Free (0% SEC Exemption)</strong></span>
-                                </>
-                              )}
+                              <Info size={12} style={{ color: "#ef4444", marginRight: "4px" }} />
+                              <span>Individual Income Tax (IIT): <strong style={{ color: "#ef4444" }}>Subject to Tax (36% IIT applies)</strong></span>
                             </div>
                           </div>
                         </div>
@@ -1754,9 +1764,25 @@ export default function PortfolioPage() {
                       />
                     </div>
                   </div>
+                  <div className="input-group">
+                    <label>Est. LKR Depreciation vs USD (% p.a.)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={pfcaDepreciation}
+                      onChange={(e) => setPfcaDepreciation(e.target.value)}
+                      placeholder="5.0"
+                      className="glass-input"
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                      Default 5% — long-run historical average LKR depreciation vs USD
+                    </span>
+                  </div>
                   <div className="div-tax-note">
                     <ShieldCheck size={16} style={{ color: "var(--color-emerald)", flexShrink: 0 }} />
-                    <span>PFCA interest is tax-free — no WHT or IIT applied.</span>
+                    <span>PFCA interest is tax-free. Total LKR return = USD interest + currency valuation.</span>
                   </div>
                   <button type="submit" className="add-btn pfca-btn">
                     Add PFCA FD to Portfolio
@@ -1815,7 +1841,7 @@ export default function PortfolioPage() {
 
                           <div className="pfca-income-block">
                             <div className="div-income-row">
-                              <span className="div-income-lbl">Yearly Interest</span>
+                              <span className="div-income-lbl">Yearly FD Interest</span>
                               <span className="pfca-income-val">{formatUSD(res.annualInterestUsd)}</span>
                             </div>
                             <div className="div-income-row">
@@ -1827,12 +1853,22 @@ export default function PortfolioPage() {
                               <span className="pfca-income-val text-emerald">{formatUSD(periodInterestUsd)}</span>
                             </div>
                             <div className="div-income-row">
-                              <span className="div-income-lbl">LKR Equivalent (Yearly)</span>
-                              <span className="pfca-income-val" style={{ color: "#fb7185" }}>{formatLKR(res.annualGross)}</span>
+                              <span className="div-income-lbl">FD Interest (LKR)</span>
+                              <span className="pfca-income-val" style={{ color: "#fb7185" }}>{formatLKR(res.interestLkr)}</span>
+                            </div>
+                            <div className="div-income-row">
+                              <span className="div-income-lbl">LKR Valuation Gain ({res.depreciationRate.toFixed(1)}% dep.)</span>
+                              <span className="pfca-income-val text-emerald">{formatLKR(res.fxValuationLkr)}</span>
+                            </div>
+                            <div className="div-income-row">
+                              <span className="div-income-lbl">Total Effective LKR / Yield</span>
+                              <span className="pfca-income-val" style={{ color: "#fb7185" }}>
+                                {formatLKR(res.annualGross)} · {res.effectiveYield.toFixed(2)}%
+                              </span>
                             </div>
                             <div className="div-tax-free-note">
                               <ShieldCheck size={13} />
-                              Tax-free — @ {item.exchangeRate.toFixed(2)} LKR/USD
+                              Tax-free — @ {item.exchangeRate.toFixed(2)} → ~{res.endFx.toFixed(2)} LKR/USD
                             </div>
                           </div>
                         </div>
@@ -2023,6 +2059,11 @@ export default function PortfolioPage() {
           border-color: rgba(99, 102, 241, 0.22);
         }
 
+        .split-yield-badge.combined {
+          background: rgba(16, 185, 129, 0.08);
+          border-color: rgba(16, 185, 129, 0.22);
+        }
+
         .split-yield-lbl {
           font-weight: 600;
           color: var(--text-muted);
@@ -2042,6 +2083,10 @@ export default function PortfolioPage() {
 
         .split-yield-badge.taxfree .split-yield-val {
           color: #818cf8;
+        }
+
+        .split-yield-badge.combined .split-yield-val {
+          color: var(--color-emerald);
         }
 
         .split-yield-cap {

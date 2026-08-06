@@ -213,9 +213,9 @@ export default function UnitTrusts() {
           <ShieldCheck size={32} className="shield-icon" />
         </div>
         <div className="banner-content">
-          <h4>Tax-Free Returns for Sri Lankan Individuals</h4>
+          <h4>Yields Are Quoted Net of Withholding Tax</h4>
           <p>
-            Unlike Fixed Deposits which attract a mandatory 10% Withholding Tax (WHT) on interest, **Unit Trust dividends and capital gains are currently 100% tax-free for individuals** in Sri Lanka. This significantly enhances the net compounding effect of your wealth.
+            Fixed Deposits attract a mandatory 10% Withholding Tax (WHT) on interest, whereas **Unit Trust yields are already declared net of WHT at fund level — no further WHT is deducted from your returns**. However, distributions still form part of your assessable income, so **36% Individual Income Tax (IIT) applies** for individuals in the top bracket.
           </p>
         </div>
       </section>

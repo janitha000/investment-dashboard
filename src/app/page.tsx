@@ -58,6 +58,7 @@ interface PfcaFdInvestment {
   rate: number;
   maturityType: "monthly" | "quarterly" | "maturity";
   exchangeRate: number;
+  depreciationRate?: number;
 }
 
 interface PortfolioState {
@@ -194,12 +195,10 @@ export default function Dashboard() {
 
     (portfolio.uts || []).forEach(item => {
       const gross = item.amount * (item.rate / 100);
-      const isFiof = item.fund.toUpperCase().includes("FIOF") || 
-                     item.fund.toLowerCase().includes("first income opportunities");
-      const iit = isFiof ? gross * 0.36 : 0;
+      const iit = gross * 0.36;
       utInvested += item.amount;
       utGross += gross;
-      utNetWht += gross; // Tax free!
+      utNetWht += gross; // Yield already quoted net of WHT
       utNetIit += (gross - iit);
     });
 
@@ -233,8 +232,11 @@ export default function Dashboard() {
 
     (portfolio.pfcaFds || []).forEach(item => {
       const fx = item.exchangeRate || 310;
+      const dep = (item.depreciationRate ?? 5) / 100;
+      const r = item.rate / 100;
       pfcaInvested += item.amount * fx;
-      pfcaGross += item.amount * (item.rate / 100) * fx; // Tax-free
+      // Effective LKR gain = interest + FX valuation (+ cross term)
+      pfcaGross += item.amount * fx * ((1 + r) * (1 + dep) - 1);
     });
 
     const grandInvested = fdInvested + utInvested + trInvested + divInvested + pfcaInvested;
@@ -519,7 +521,7 @@ export default function Dashboard() {
                   <td>Low</td>
                   <td>No Guarantee (highly diversified)</td>
                   <td>Daily compounding / monthly payout</td>
-                  <td>100% Tax-Free for individuals</td>
+                  <td>Quoted yield is net of WHT; 36% IIT applies</td>
                 </tr>
                 <tr>
                   <td><strong>Fixed Deposits (FD)</strong></td>

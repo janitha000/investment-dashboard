@@ -11,7 +11,7 @@ interface FdItem { id: string; institution: string; amount: number; rate: number
 interface UtItem { id: string; fund: string; amount: number; rate: number; }
 interface TrItem { id: string; type: string; amount: number; rate: number; tenureDaysOrYears: number; couponValue?: number; }
 interface DivItem { id: string; company: string; amount: number; yearlyDividend: number; }
-interface PfcaItem { id: string; institution: string; amount: number; rate: number; maturityType: "monthly" | "quarterly" | "maturity"; exchangeRate: number; }
+interface PfcaItem { id: string; institution: string; amount: number; rate: number; maturityType: "monthly" | "quarterly" | "maturity"; exchangeRate: number; depreciationRate?: number; }
 interface PortfolioState { fds: FdItem[]; uts: UtItem[]; treasury: TrItem[]; dividends?: DivItem[]; pfcaFds?: PfcaItem[]; }
 
 interface ScenarioItem {
@@ -23,7 +23,7 @@ interface ScenarioItem {
   couponValue?: number;
   yearlyDividend?: number;
   maturityType?: "monthly" | "quarterly" | "maturity";
-  isFiof?: boolean;
+  depreciationRate?: number;
 }
 
 interface Scenario {
@@ -37,17 +37,22 @@ interface Scenario {
 function calcGross(item: ScenarioItem): number {
   if (item.category === "dividend") return item.yearlyDividend ?? (item.amount * (item.rate / 100));
   if (item.category === "treasury" && item.couponValue) return item.couponValue * 2;
+  if (item.category === "pfca") {
+    // amount is LKR-equivalent capital; effective = interest + FX valuation + cross term
+    const dep = (item.depreciationRate ?? 5) / 100;
+    const r = item.rate / 100;
+    return item.amount * ((1 + r) * (1 + dep) - 1);
+  }
   return item.amount * (item.rate / 100);
 }
 
 function calcReturns(item: ScenarioItem) {
   const gross = calcGross(item);
-  const taxFree = item.category === "ut" || item.category === "dividend" || item.category === "pfca";
-  const wht = taxFree ? 0 : gross * 0.10;
+  // UT yields are quoted net of WHT; dividends and PFCA interest carry no WHT.
+  const noWht = item.category === "ut" || item.category === "dividend" || item.category === "pfca";
+  const wht = noWht ? 0 : gross * 0.10;
   const netWht = gross - wht;
-  const iit = (item.category === "dividend" || item.category === "pfca") ? 0
-    : (item.category === "ut" && !item.isFiof) ? 0
-    : gross * 0.36;
+  const iit = (item.category === "dividend" || item.category === "pfca") ? 0 : gross * 0.36;
   const netIit = gross - iit;
   return { gross, netWht, netIit };
 }
@@ -55,10 +60,7 @@ function calcReturns(item: ScenarioItem) {
 function portfolioToItems(p: PortfolioState): ScenarioItem[] {
   const items: ScenarioItem[] = [];
   (p.fds || []).forEach(fd => items.push({ id: fd.id, category: "fd", label: fd.institution, amount: fd.amount, rate: fd.rate }));
-  (p.uts || []).forEach(ut => {
-    const isFiof = ut.fund.toUpperCase().includes("FIOF");
-    items.push({ id: ut.id, category: "ut", label: ut.fund, amount: ut.amount, rate: ut.rate, isFiof });
-  });
+  (p.uts || []).forEach(ut => items.push({ id: ut.id, category: "ut", label: ut.fund, amount: ut.amount, rate: ut.rate }));
   (p.treasury || []).forEach(tr => items.push({
     id: tr.id, category: "treasury",
     label: tr.type === "tbond" ? ("T-Bond " + tr.tenureDaysOrYears + "Y") : ("T-Bill " + tr.tenureDaysOrYears + "D"),
@@ -75,7 +77,8 @@ function portfolioToItems(p: PortfolioState): ScenarioItem[] {
     const fx = pf.exchangeRate || 310;
     items.push({
       id: pf.id, category: "pfca", label: pf.institution,
-      amount: pf.amount * fx, rate: pf.rate, maturityType: pf.maturityType
+      amount: pf.amount * fx, rate: pf.rate, maturityType: pf.maturityType,
+      depreciationRate: pf.depreciationRate ?? 5
     });
   });
   return items;
@@ -101,7 +104,8 @@ function calcTotals(items: ScenarioItem[]) {
   });
   const coreYield = coreInvested > 0 ? (coreGross / coreInvested) * 100 : 0;
   const taxFreeYield = taxFreeInvested > 0 ? (taxFreeGross / taxFreeInvested) * 100 : 0;
-  return { invested, gross, netWht, netIit, coreInvested, coreGross, coreYield, taxFreeInvested, taxFreeGross, taxFreeYield };
+  const combinedYield = invested > 0 ? (gross / invested) * 100 : 0;
+  return { invested, gross, netWht, netIit, coreInvested, coreGross, coreYield, taxFreeInvested, taxFreeGross, taxFreeYield, combinedYield };
 }
 
 const SC_COLORS = ["#00f2fe","#10b981","#a78bfa","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"];
@@ -131,7 +135,7 @@ export default function ScenariosPage() {
   const [addYearlyDiv, setAddYearlyDiv] = useState<Record<string,string>>({});
   const [addMaturity, setAddMaturity] = useState<Record<string,"monthly"|"quarterly"|"maturity">>({});
   const [addFx, setAddFx] = useState<Record<string,string>>({});
-  const [addFiof, setAddFiof] = useState<Record<string,boolean>>({});
+  const [addDepreciation, setAddDepreciation] = useState<Record<string,string>>({});
 
   useEffect(() => {
     try { const s = localStorage.getItem("lankawealth_portfolio"); if (s) setBaseline(portfolioToItems(JSON.parse(s))); } catch {}
@@ -190,6 +194,10 @@ export default function ScenariosPage() {
       : cat === "pfca" ? "PFCA FD"
       : "Treasury";
 
+    const depRate = cat === "pfca"
+      ? (parseFloat(addDepreciation[sid] || "5") || 5)
+      : undefined;
+
     const ni: ScenarioItem = {
       id: Date.now().toString(), category: cat,
       label: addLabel[sid] || defaultLabel,
@@ -197,7 +205,7 @@ export default function ScenariosPage() {
       couponValue: cat === "treasury" && addCoupon[sid] ? parseFloat(addCoupon[sid]) : undefined,
       yearlyDividend: cat === "dividend" ? yearlyDividend : undefined,
       maturityType: cat === "pfca" ? maturityType : undefined,
-      isFiof: cat === "ut" ? (addFiof[sid] || false) : undefined,
+      depreciationRate: depRate,
     };
     save(scenarios.map(s => s.id === sid ? { ...s, items: [...s.items, ni] } : s));
     setAddLabel(p => ({ ...p, [sid]: "" }));
@@ -206,6 +214,7 @@ export default function ScenariosPage() {
     setAddCoupon(p => ({ ...p, [sid]: "" }));
     setAddYearlyDiv(p => ({ ...p, [sid]: "" }));
     setAddFx(p => ({ ...p, [sid]: "" }));
+    setAddDepreciation(p => ({ ...p, [sid]: "" }));
   };
 
   const div = period === "monthly" ? 12 : 1;
@@ -265,6 +274,13 @@ export default function ScenariosPage() {
                 <span className="sc-sy-lbl">Dividend + PFCA</span>
                 <span className="sc-sy-val">{pct(baseTot.taxFreeYield)}</span>
                 <span className="sc-sy-cap">{fmt(baseTot.taxFreeInvested)}</span>
+              </div>
+            )}
+            {baseTot.invested > 0 && (
+              <div className="sc-sy combined">
+                <span className="sc-sy-lbl">All Combined</span>
+                <span className="sc-sy-val">{pct(baseTot.combinedYield)}</span>
+                <span className="sc-sy-cap">{fmt(baseTot.invested)}</span>
               </div>
             )}
           </div>
@@ -340,6 +356,12 @@ export default function ScenariosPage() {
                     <div className="sc-spill">
                       <span className="sc-plbl">Div+PFCA</span>
                       <span className="sc-pval" style={{color:"#818cf8"}}>{pct(tot.taxFreeYield)}</span>
+                    </div>
+                  )}
+                  {tot.invested > 0 && (
+                    <div className="sc-spill">
+                      <span className="sc-plbl">All Combined</span>
+                      <span className="sc-pval sc-em">{pct(tot.combinedYield)}</span>
                     </div>
                   )}
                   <div className="sc-spill"><span className="sc-plbl">Gross {period==="monthly"?"Monthly":"Annual"}</span><span className="sc-pval">{fmt(tot.gross/div)}</span></div>
@@ -427,6 +449,10 @@ export default function ScenariosPage() {
                               <label>USD/LKR Rate</label>
                               <input className="glass-input" type="number" step="0.5" value={addFx[s.id]||"310"} onChange={e=>setAddFx(p=>({...p,[s.id]:e.target.value}))} placeholder="310" />
                             </div>
+                            <div className="sc-fg">
+                              <label>LKR Dep. % p.a.</label>
+                              <input className="glass-input" type="number" step="0.1" value={addDepreciation[s.id]||"5"} onChange={e=>setAddDepreciation(p=>({...p,[s.id]:e.target.value}))} placeholder="5.0" />
+                            </div>
                           </>
                         )}
                         {cat==="treasury" && (
@@ -436,12 +462,8 @@ export default function ScenariosPage() {
                           </div>
                         )}
                         {cat==="ut" && (
-                          <div className="sc-fg">
-                            <label>FIOF (taxable)?</label>
-                            <div style={{display:"flex",alignItems:"center",gap:"6px",marginTop:"8px"}}>
-                              <input type="checkbox" id={"fiof-"+s.id} checked={addFiof[s.id]||false} onChange={e=>setAddFiof(p=>({...p,[s.id]:e.target.checked}))} style={{width:"15px",height:"15px",accentColor:"var(--color-teal)",cursor:"pointer"}} />
-                              <label htmlFor={"fiof-"+s.id} style={{fontSize:"0.73rem",color:"var(--text-secondary)",cursor:"pointer"}}>IIT applies</label>
-                            </div>
+                          <div className="sc-fg" style={{justifyContent:"center",paddingTop:"22px"}}>
+                            <span style={{fontSize:"0.72rem",fontWeight:700,color:"#d8b4fe"}}>36% IIT applies</span>
                           </div>
                         )}
                         {(cat==="dividend" || cat==="pfca") && (
@@ -479,7 +501,7 @@ export default function ScenariosPage() {
                 <table className="sc-cmptbl">
                   <thead><tr>
                     <th>Strategy</th><th>Total Invested</th>
-                    <th>FD+UT+Treasury</th><th>Div+PFCA</th>
+                    <th>FD+UT+Treasury</th><th>Div+PFCA</th><th>All Combined</th>
                     <th>Gross {period==="monthly"?"Monthly":"Annual"}</th>
                     <th>Net (After WHT)</th><th>Net (After 36% IIT)</th><th>vs Baseline</th>
                   </tr></thead>
@@ -492,6 +514,7 @@ export default function ScenariosPage() {
                           <td style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.invested)}</td>
                           <td style={{color:"var(--color-teal)",fontWeight:700}}>{row.totals.coreInvested > 0 ? pct(row.totals.coreYield) : "—"}</td>
                           <td style={{color:"#818cf8",fontWeight:700}}>{row.totals.taxFreeInvested > 0 ? pct(row.totals.taxFreeYield) : "—"}</td>
+                          <td className="sc-em" style={{fontWeight:700}}>{row.totals.invested > 0 ? pct(row.totals.combinedYield) : "—"}</td>
                           <td style={{fontFamily:"var(--font-display)"}}>{fmt(row.totals.gross/div)}</td>
                           <td className="sc-em" style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.netWht/div)}</td>
                           <td className="sc-pu" style={{fontFamily:"var(--font-display)"}}>{fmt(row.totals.netIit/div)}</td>
@@ -537,10 +560,12 @@ export default function ScenariosPage() {
         .sc-sy{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;border:1px solid;font-size:.72rem}
         .sc-sy.core{background:rgba(0,242,254,.06);border-color:rgba(0,242,254,.2)}
         .sc-sy.taxfree{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.22)}
+        .sc-sy.combined{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.22)}
         .sc-sy-lbl{font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em}
         .sc-sy-val{font-family:var(--font-display);font-weight:800;font-size:.9rem}
         .sc-sy.core .sc-sy-val{color:var(--color-teal)}
         .sc-sy.taxfree .sc-sy-val{color:#818cf8}
+        .sc-sy.combined .sc-sy-val{color:var(--color-emerald)}
         .sc-sy-cap{color:var(--text-secondary);font-weight:600;padding-left:6px;border-left:1px solid var(--border-color)}
         .sc-inc-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem}
         .sc-inc-col{display:flex;flex-direction:column;gap:4px}
