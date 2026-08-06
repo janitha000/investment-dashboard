@@ -10,15 +10,17 @@ import {
 interface FdItem { id: string; institution: string; amount: number; rate: number; }
 interface UtItem { id: string; fund: string; amount: number; rate: number; }
 interface TrItem { id: string; type: string; amount: number; rate: number; tenureDaysOrYears: number; couponValue?: number; }
-interface PortfolioState { fds: FdItem[]; uts: UtItem[]; treasury: TrItem[]; }
+interface DivItem { id: string; company: string; amount: number; yearlyDividend: number; }
+interface PortfolioState { fds: FdItem[]; uts: UtItem[]; treasury: TrItem[]; dividends?: DivItem[]; }
 
 interface ScenarioItem {
   id: string;
-  category: "fd" | "ut" | "treasury";
+  category: "fd" | "ut" | "treasury" | "dividend";
   label: string;
   amount: number;
   rate: number;
   couponValue?: number;
+  yearlyDividend?: number;
   isFiof?: boolean;
 }
 
@@ -31,31 +33,42 @@ interface Scenario {
 }
 
 function calcGross(item: ScenarioItem): number {
+  if (item.category === "dividend") return item.yearlyDividend ?? (item.amount * (item.rate / 100));
   if (item.category === "treasury" && item.couponValue) return item.couponValue * 2;
   return item.amount * (item.rate / 100);
 }
 
 function calcReturns(item: ScenarioItem) {
   const gross = calcGross(item);
-  const wht = item.category === "ut" ? 0 : gross * 0.10;
+  // Dividends and unit trusts: no WHT. Dividends: no IIT either.
+  const wht = (item.category === "ut" || item.category === "dividend") ? 0 : gross * 0.10;
   const netWht = gross - wht;
-  const iit = (item.category === "ut" && !item.isFiof) ? 0 : gross * 0.36;
+  const iit = item.category === "dividend" ? 0
+    : (item.category === "ut" && !item.isFiof) ? 0
+    : gross * 0.36;
   const netIit = gross - iit;
   return { gross, netWht, netIit };
 }
 
 function portfolioToItems(p: PortfolioState): ScenarioItem[] {
   const items: ScenarioItem[] = [];
-  p.fds.forEach(fd => items.push({ id: fd.id, category: "fd", label: fd.institution, amount: fd.amount, rate: fd.rate }));
-  p.uts.forEach(ut => {
+  (p.fds || []).forEach(fd => items.push({ id: fd.id, category: "fd", label: fd.institution, amount: fd.amount, rate: fd.rate }));
+  (p.uts || []).forEach(ut => {
     const isFiof = ut.fund.toUpperCase().includes("FIOF");
     items.push({ id: ut.id, category: "ut", label: ut.fund, amount: ut.amount, rate: ut.rate, isFiof });
   });
-  p.treasury.forEach(tr => items.push({
+  (p.treasury || []).forEach(tr => items.push({
     id: tr.id, category: "treasury",
     label: tr.type === "tbond" ? ("T-Bond " + tr.tenureDaysOrYears + "Y") : ("T-Bill " + tr.tenureDaysOrYears + "D"),
     amount: tr.amount, rate: tr.rate, couponValue: tr.couponValue
   }));
+  (p.dividends || []).forEach(d => {
+    const rate = d.amount > 0 ? (d.yearlyDividend / d.amount) * 100 : 0;
+    items.push({
+      id: d.id, category: "dividend", label: d.company,
+      amount: d.amount, rate, yearlyDividend: d.yearlyDividend
+    });
+  });
   return items;
 }
 
@@ -68,7 +81,13 @@ function calcTotals(items: ScenarioItem[]) {
 const SC_COLORS = ["#00f2fe","#10b981","#a78bfa","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"];
 const fmt = (n: number) => new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0 }).format(n);
 const pct = (n: number) => n.toFixed(2) + "%";
-const catCol = (c: string) => c === "fd" ? "var(--color-teal)" : c === "ut" ? "var(--color-emerald)" : "var(--color-indigo)";
+const catCol = (c: string) =>
+  c === "fd" ? "var(--color-teal)"
+  : c === "ut" ? "var(--color-emerald)"
+  : c === "dividend" ? "#6366f1"
+  : "var(--color-indigo)";
+const catLabel = (c: string) =>
+  c === "dividend" ? "DIV" : c.toUpperCase();
 
 export default function ScenariosPage() {
   const [baseline, setBaseline] = useState<ScenarioItem[]>([]);
@@ -77,11 +96,12 @@ export default function ScenariosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [showCmp, setShowCmp] = useState(true);
-  const [addCat, setAddCat] = useState<Record<string,"fd"|"ut"|"treasury">>({});
+  const [addCat, setAddCat] = useState<Record<string,"fd"|"ut"|"treasury"|"dividend">>({});
   const [addLabel, setAddLabel] = useState<Record<string,string>>({});
   const [addAmount, setAddAmount] = useState<Record<string,string>>({});
   const [addRate, setAddRate] = useState<Record<string,string>>({});
   const [addCoupon, setAddCoupon] = useState<Record<string,string>>({});
+  const [addYearlyDiv, setAddYearlyDiv] = useState<Record<string,string>>({});
   const [addFiof, setAddFiof] = useState<Record<string,boolean>>({});
 
   useEffect(() => {
@@ -114,13 +134,25 @@ export default function ScenariosPage() {
   const handleAdd = (sid: string) => {
     const cat = addCat[sid] || "fd";
     const amount = parseFloat(addAmount[sid] || "0");
-    const rate = parseFloat(addRate[sid] || "0");
-    if (!amount || !rate) return;
+    if (!amount) return;
+
+    let rate = parseFloat(addRate[sid] || "0");
+    let yearlyDividend: number | undefined;
+
+    if (cat === "dividend") {
+      yearlyDividend = parseFloat(addYearlyDiv[sid] || "0");
+      if (!yearlyDividend) return;
+      rate = amount > 0 ? (yearlyDividend / amount) * 100 : 0;
+    } else if (!rate) {
+      return;
+    }
+
     const ni: ScenarioItem = {
       id: Date.now().toString(), category: cat,
-      label: addLabel[sid] || (cat === "fd" ? "FD" : cat === "ut" ? "UT" : "Treasury"),
+      label: addLabel[sid] || (cat === "fd" ? "FD" : cat === "ut" ? "UT" : cat === "dividend" ? "Dividend" : "Treasury"),
       amount, rate,
       couponValue: cat === "treasury" && addCoupon[sid] ? parseFloat(addCoupon[sid]) : undefined,
+      yearlyDividend: cat === "dividend" ? yearlyDividend : undefined,
       isFiof: cat === "ut" ? (addFiof[sid] || false) : undefined,
     };
     save(scenarios.map(s => s.id === sid ? { ...s, items: [...s.items, ni] } : s));
@@ -128,6 +160,7 @@ export default function ScenariosPage() {
     setAddAmount(p => ({ ...p, [sid]: "" }));
     setAddRate(p => ({ ...p, [sid]: "" }));
     setAddCoupon(p => ({ ...p, [sid]: "" }));
+    setAddYearlyDiv(p => ({ ...p, [sid]: "" }));
   };
 
   const div = period === "monthly" ? 12 : 1;
@@ -184,7 +217,7 @@ export default function ScenariosPage() {
               const r = calcReturns(item);
               return (
                 <div key={item.id} className="sc-bpill" style={{borderColor:catCol(item.category)+"44"}}>
-                  <span style={{color:catCol(item.category),fontSize:"0.67rem",fontWeight:800,textTransform:"uppercase"}}>{item.category}</span>
+                  <span style={{color:catCol(item.category),fontSize:"0.67rem",fontWeight:800,textTransform:"uppercase"}}>{catLabel(item.category)}</span>
                   <span className="sc-bpl">{item.label}</span>
                   <span style={{color:"var(--text-muted)",fontSize:"0.7rem"}}>{pct(item.rate)}</span>
                   <span style={{fontFamily:"var(--font-display)",fontWeight:700,fontSize:"0.78rem"}}>{fmt(r.gross/div)}</span>
@@ -258,7 +291,7 @@ export default function ScenariosPage() {
                                 <tr key={item.id}>
                                   <td>
                                     <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                                      <span className="sc-cbdg" style={{color:catCol(item.category),borderColor:catCol(item.category)+"40",background:catCol(item.category)+"15"}}>{item.category.toUpperCase()}</span>
+                                      <span className="sc-cbdg" style={{color:catCol(item.category),borderColor:catCol(item.category)+"40",background:catCol(item.category)+"15"}}>{catLabel(item.category)}</span>
                                       <span style={{fontWeight:600,color:"var(--text-primary)"}}>{item.label}</span>
                                     </div>
                                   </td>
@@ -280,24 +313,32 @@ export default function ScenariosPage() {
                       <div className="sc-frow">
                         <div className="sc-fg">
                           <label>Category</label>
-                          <select value={cat} onChange={e=>setAddCat(p=>({...p,[s.id]:e.target.value as "fd"|"ut"|"treasury"}))} className="glass-input" style={{background:"#0d1323"}}>
+                          <select value={cat} onChange={e=>setAddCat(p=>({...p,[s.id]:e.target.value as "fd"|"ut"|"treasury"|"dividend"}))} className="glass-input" style={{background:"#0d1323"}}>
                             <option value="fd">Fixed Deposit</option>
                             <option value="ut">Unit Trust</option>
                             <option value="treasury">Treasury</option>
+                            <option value="dividend">Dividend</option>
                           </select>
                         </div>
                         <div className="sc-fg" style={{flex:2}}>
-                          <label>Label / Name</label>
-                          <input className="glass-input" value={addLabel[s.id]||""} onChange={e=>setAddLabel(p=>({...p,[s.id]:e.target.value}))} placeholder={cat==="fd"?"e.g. Sampath FD":cat==="ut"?"e.g. CAL MMF":"e.g. T-Bond 5Y"} />
+                          <label>{cat==="dividend"?"Company":"Label / Name"}</label>
+                          <input className="glass-input" value={addLabel[s.id]||""} onChange={e=>setAddLabel(p=>({...p,[s.id]:e.target.value}))} placeholder={cat==="fd"?"e.g. Sampath FD":cat==="ut"?"e.g. CAL MMF":cat==="dividend"?"e.g. Commercial Bank":"e.g. T-Bond 5Y"} />
                         </div>
                         <div className="sc-fg">
-                          <label>Amount (LKR)</label>
+                          <label>{cat==="dividend"?"Investment (LKR)":"Amount (LKR)"}</label>
                           <input className="glass-input" type="number" value={addAmount[s.id]||""} onChange={e=>setAddAmount(p=>({...p,[s.id]:e.target.value}))} placeholder="1000000" />
                         </div>
-                        <div className="sc-fg">
-                          <label>Rate % p.a.</label>
-                          <input className="glass-input" type="number" step="0.05" value={addRate[s.id]||""} onChange={e=>setAddRate(p=>({...p,[s.id]:e.target.value}))} placeholder="11.5" />
-                        </div>
+                        {cat==="dividend" ? (
+                          <div className="sc-fg">
+                            <label>Est. Yearly Dividend</label>
+                            <input className="glass-input" type="number" value={addYearlyDiv[s.id]||""} onChange={e=>setAddYearlyDiv(p=>({...p,[s.id]:e.target.value}))} placeholder="25000" />
+                          </div>
+                        ) : (
+                          <div className="sc-fg">
+                            <label>Rate % p.a.</label>
+                            <input className="glass-input" type="number" step="0.05" value={addRate[s.id]||""} onChange={e=>setAddRate(p=>({...p,[s.id]:e.target.value}))} placeholder="11.5" />
+                          </div>
+                        )}
                         {cat==="treasury" && (
                           <div className="sc-fg">
                             <label>Bi-Annual Coupon</label>
@@ -311,6 +352,11 @@ export default function ScenariosPage() {
                               <input type="checkbox" id={"fiof-"+s.id} checked={addFiof[s.id]||false} onChange={e=>setAddFiof(p=>({...p,[s.id]:e.target.checked}))} style={{width:"15px",height:"15px",accentColor:"var(--color-teal)",cursor:"pointer"}} />
                               <label htmlFor={"fiof-"+s.id} style={{fontSize:"0.73rem",color:"var(--text-secondary)",cursor:"pointer"}}>IIT applies</label>
                             </div>
+                          </div>
+                        )}
+                        {cat==="dividend" && (
+                          <div className="sc-fg" style={{justifyContent:"center",paddingTop:"22px"}}>
+                            <span style={{fontSize:"0.72rem",fontWeight:700,color:"var(--color-emerald)"}}>Tax-Free</span>
                           </div>
                         )}
                         <div className="sc-fg" style={{justifyContent:"flex-end"}}>

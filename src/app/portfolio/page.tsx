@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRates } from "@/context/RatesContext";
-import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck } from "lucide-react";
+import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart } from "lucide-react";
 
 interface FdInvestment {
   id: string;
@@ -40,22 +40,31 @@ interface TreasuryInvestment {
   maturityDate?: string;     // ISO date string e.g. "2029-06-15"
 }
 
+interface DividendInvestment {
+  id: string;
+  company: string;
+  amount: number;            // Capital invested (LKR)
+  yearlyDividend: number;    // Estimated yearly dividend (LKR) — tax-free
+}
+
 interface PortfolioState {
   fds: FdInvestment[];
   uts: UtInvestment[];
   treasury: TreasuryInvestment[];
+  dividends: DividendInvestment[];
 }
 
 const INITIAL_STATE: PortfolioState = {
   fds: [],
   uts: [],
-  treasury: []
+  treasury: [],
+  dividends: []
 };
 
 export default function PortfolioPage() {
   const { rates } = useRates();
   const [portfolio, setPortfolio] = useState<PortfolioState>(INITIAL_STATE);
-  const [activeTab, setActiveTab] = useState<"fds" | "uts" | "treasury">("fds");
+  const [activeTab, setActiveTab] = useState<"fds" | "uts" | "treasury" | "dividends">("fds");
   const [incomePeriod, setIncomePeriod] = useState<"monthly" | "annual">("monthly");
 
   // Input states for FD Form
@@ -97,12 +106,23 @@ export default function PortfolioPage() {
   const [trCouponMonth, setTrCouponMonth] = useState<number>(6); // default June
   const [trMaturityDate, setTrMaturityDate] = useState<string>("");
 
+  // Input states for Dividend Form
+  const [divCompany, setDivCompany] = useState<string>("");
+  const [divAmount, setDivAmount] = useState<string>("");
+  const [divYearly, setDivYearly] = useState<string>("");
+
   // Load from local storage
   useEffect(() => {
     const saved = localStorage.getItem("lankawealth_portfolio");
     if (saved) {
       try {
-        setPortfolio(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setPortfolio({
+          fds: parsed.fds || [],
+          uts: parsed.uts || [],
+          treasury: parsed.treasury || [],
+          dividends: parsed.dividends || [],
+        });
       } catch (e) {
         console.error("Failed to parse portfolio", e);
       }
@@ -279,7 +299,30 @@ export default function PortfolioPage() {
     setTrMaturityDate("");
   };
 
-  const handleDeleteItem = (category: "fds" | "uts" | "treasury", id: string) => {
+  const handleAddDividend = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amountNum = parseFloat(divAmount);
+    const yearlyNum = parseFloat(divYearly);
+    if (!divCompany.trim() || !amountNum || !yearlyNum) return;
+
+    const newItem: DividendInvestment = {
+      id: Date.now().toString(),
+      company: divCompany.trim(),
+      amount: amountNum,
+      yearlyDividend: yearlyNum,
+    };
+
+    const updated = {
+      ...portfolio,
+      dividends: [...(portfolio.dividends || []), newItem],
+    };
+    savePortfolio(updated);
+    setDivCompany("");
+    setDivAmount("");
+    setDivYearly("");
+  };
+
+  const handleDeleteItem = (category: "fds" | "uts" | "treasury" | "dividends", id: string) => {
     const updated = {
       ...portfolio,
       [category]: portfolio[category].filter((item) => item.id !== id)
@@ -345,6 +388,12 @@ export default function PortfolioPage() {
     return { annualGross, wht, netWht, iit36, netIit, nextCouponDates };
   };
 
+  // Dividends are tax-free — gross equals net under both WHT and IIT views
+  const calculateDividendReturns = (item: DividendInvestment) => {
+    const annualGross = item.yearlyDividend;
+    return { annualGross, wht: 0, netWht: annualGross, iit36: 0, netIit: annualGross };
+  };
+
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   // Totals for summary panel
@@ -378,11 +427,21 @@ export default function PortfolioPage() {
     return acc;
   }, { invested: 0, gross: 0, netWht: 0, whtDeducted: 0, netIit: 0 });
 
-  const grandTotalInvested = fdTotals.invested + utTotals.invested + treasuryTotals.invested;
-  const grandTotalGross = fdTotals.gross + utTotals.gross + treasuryTotals.gross;
-  const grandTotalNetWht = fdTotals.netWht + utTotals.netWht + treasuryTotals.netWht;
-  const grandTotalWht = fdTotals.whtDeducted + utTotals.whtDeducted + treasuryTotals.whtDeducted;
-  const grandTotalNetIit = fdTotals.netIit + utTotals.netIit + treasuryTotals.netIit;
+  const dividendTotals = (portfolio.dividends || []).reduce((acc, item) => {
+    const res = calculateDividendReturns(item);
+    acc.invested += item.amount;
+    acc.gross += res.annualGross;
+    acc.netWht += res.netWht;
+    acc.whtDeducted += res.wht;
+    acc.netIit += res.netIit;
+    return acc;
+  }, { invested: 0, gross: 0, netWht: 0, whtDeducted: 0, netIit: 0 });
+
+  const grandTotalInvested = fdTotals.invested + utTotals.invested + treasuryTotals.invested + dividendTotals.invested;
+  const grandTotalGross = fdTotals.gross + utTotals.gross + treasuryTotals.gross + dividendTotals.gross;
+  const grandTotalNetWht = fdTotals.netWht + utTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht;
+  const grandTotalWht = fdTotals.whtDeducted + utTotals.whtDeducted + treasuryTotals.whtDeducted + dividendTotals.whtDeducted;
+  const grandTotalNetIit = fdTotals.netIit + utTotals.netIit + treasuryTotals.netIit + dividendTotals.netIit;
 
   // Preset rates autocomplete when forms load
   useEffect(() => {
@@ -580,6 +639,43 @@ export default function PortfolioPage() {
             </div>
           </div>
         </div>
+
+        {/* Dividends Totals Card */}
+        <div className="glass-card category-total-card animate-fade-in dividend-total-card">
+          <div className="card-header">
+            <div className="title-box">
+              <LineChart size={18} className="icon-div" />
+              <h5>Dividends (CSE)</h5>
+            </div>
+            <span className="badge" style={{ background: "rgba(99, 102, 241, 0.12)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.2)" }}>Tax-Free</span>
+          </div>
+          <div className="total-capital-row">
+            <span className="lbl">Total Invested:</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <span className="val" style={{ color: "#6366f1" }}>{formatLKR(dividendTotals.invested)}</span>
+              {dividendTotals.invested > 0 && (
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: "600", marginTop: "2px" }}>
+                  Avg. Yield: {((dividendTotals.gross / dividendTotals.invested) * 100).toFixed(2)}% p.a.
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="divider-h" style={{ margin: "8px 0" }} />
+          <div className="category-metrics-list">
+            <div className="metric-item">
+              <span>Est. {incomePeriod === "monthly" ? "Monthly" : "Yearly"} Dividend:</span>
+              <span className="val-text" style={{ color: "#6366f1" }}>{formatLKR(incomePeriod === "monthly" ? dividendTotals.gross / 12 : dividendTotals.gross)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Tax Deduction:</span>
+              <span className="val-text text-emerald">None (Tax-Free)</span>
+            </div>
+            <div className="metric-item">
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} Income:</span>
+              <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? dividendTotals.netWht / 12 : dividendTotals.netWht)}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Tabs Container */}
@@ -605,6 +701,13 @@ export default function PortfolioPage() {
           >
             <Wallet size={16} className="tab-icon" />
             Treasury ({portfolio.treasury.length})
+          </button>
+          <button 
+            className={`tab-link ${activeTab === "dividends" ? "active" : ""}`}
+            onClick={() => setActiveTab("dividends")}
+          >
+            <LineChart size={16} className="tab-icon" />
+            Dividends ({(portfolio.dividends || []).length})
           </button>
         </div>
 
@@ -1313,6 +1416,123 @@ export default function PortfolioPage() {
               </div>
             </div>
           )}
+
+          {/* DIVIDENDS TAB */}
+          {activeTab === "dividends" && (
+            <div className="tab-layout-grid">
+              <div className="glass-card form-card">
+                <h4><Plus size={18} style={{ color: "#6366f1", marginRight: "6px" }} /> Add Dividend Holding</h4>
+                <form onSubmit={handleAddDividend} className="form-inputs-group">
+                  <div className="input-group">
+                    <label>Company</label>
+                    <input
+                      type="text"
+                      value={divCompany}
+                      onChange={(e) => setDivCompany(e.target.value)}
+                      placeholder="e.g. Commercial Bank of Ceylon"
+                      className="glass-input"
+                      required
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Investment (LKR)</label>
+                    <input
+                      type="number"
+                      value={divAmount}
+                      onChange={(e) => setDivAmount(e.target.value)}
+                      placeholder="e.g. 500000"
+                      className="glass-input"
+                      required
+                      min="1"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Estimated Yearly Dividend (LKR)</label>
+                    <input
+                      type="number"
+                      value={divYearly}
+                      onChange={(e) => setDivYearly(e.target.value)}
+                      placeholder="e.g. 25000"
+                      className="glass-input"
+                      required
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="div-tax-note">
+                    <ShieldCheck size={16} style={{ color: "var(--color-emerald)", flexShrink: 0 }} />
+                    <span>Dividend income is recorded as tax-free — no WHT or IIT applied.</span>
+                  </div>
+                  <button type="submit" className="add-btn dividends-btn">
+                    Add Dividend to Portfolio
+                  </button>
+                </form>
+              </div>
+
+              <div className="items-list-box">
+                <div className="category-summary-strip">
+                  <span>Total Holdings: <strong>{(portfolio.dividends || []).length}</strong></span>
+                  <span>Invested: <strong>{formatLKR(dividendTotals.invested)}</strong></span>
+                </div>
+
+                {(portfolio.dividends || []).length === 0 ? (
+                  <div className="empty-portfolio-state glass-card">
+                    <LineChart size={36} className="empty-icon" />
+                    <p>No dividend holdings added yet.</p>
+                  </div>
+                ) : (
+                  <div className="investments-scroll-grid">
+                    {(portfolio.dividends || []).map((item) => {
+                      const yieldPct = item.amount > 0 ? (item.yearlyDividend / item.amount) * 100 : 0;
+                      return (
+                        <div key={item.id} className="glass-card investment-item-card dividend-item-card animate-fade-in">
+                          <div className="item-header">
+                            <div>
+                              <h5>{item.company}</h5>
+                              <span className="item-tag-details">Dividend • Tax-Free</span>
+                            </div>
+                            <button
+                              className="delete-btn"
+                              onClick={() => handleDeleteItem("dividends", item.id)}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+
+                          <div className="card-top-info-row">
+                            <div className="info-badge-val">
+                              <span className="lbl">Investment:</span>
+                              <span className="val" style={{ color: "#6366f1" }}>{formatLKR(item.amount)}</span>
+                            </div>
+                            <div className="info-badge-val">
+                              <span className="lbl">Implied Yield:</span>
+                              <span className="val text-white">{yieldPct.toFixed(2)}%</span>
+                            </div>
+                          </div>
+
+                          <div className="dividend-income-block">
+                            <div className="div-income-row">
+                              <span className="div-income-lbl">Estimated Yearly Dividend</span>
+                              <span className="div-income-val">{formatLKR(item.yearlyDividend)}</span>
+                            </div>
+                            <div className="div-income-row">
+                              <span className="div-income-lbl">Estimated Monthly</span>
+                              <span className="div-income-val text-emerald">{formatLKR(item.yearlyDividend / 12)}</span>
+                            </div>
+                            <div className="div-tax-free-note">
+                              <ShieldCheck size={13} />
+                              No tax deducted — full dividend retained
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1674,6 +1894,10 @@ export default function PortfolioPage() {
           background: linear-gradient(135deg, var(--color-indigo) 0%, var(--color-purple) 100%);
           color: #04060c;
         }
+        .dividends-btn {
+          background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
+          color: #ffffff;
+        }
 
         .add-btn:hover {
           transform: translateY(-1px);
@@ -1932,12 +2156,18 @@ export default function PortfolioPage() {
 
         .category-totals-row {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 1.5rem;
           margin-bottom: 2rem;
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 1100px) {
+          .category-totals-row {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 640px) {
           .category-totals-row {
             grid-template-columns: 1fr;
             gap: 1.25rem;
@@ -1978,6 +2208,65 @@ export default function PortfolioPage() {
         .icon-fd { color: var(--color-teal); }
         .icon-ut { color: var(--color-emerald); }
         .icon-tr { color: var(--color-indigo); }
+        .icon-div { color: #6366f1; }
+
+        .dividend-item-card {
+          border-color: rgba(99, 102, 241, 0.18);
+        }
+
+        .dividend-income-block {
+          margin-top: 0.75rem;
+          padding: 0.85rem 1rem;
+          background: rgba(99, 102, 241, 0.06);
+          border: 1px solid rgba(99, 102, 241, 0.15);
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .div-income-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: 8px;
+        }
+
+        .div-income-lbl {
+          font-size: 0.75rem;
+          color: var(--text-secondary);
+          font-weight: 600;
+        }
+
+        .div-income-val {
+          font-family: var(--font-display);
+          font-size: 1.05rem;
+          font-weight: 800;
+          color: #818cf8;
+        }
+
+        .div-tax-free-note {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: var(--color-emerald);
+          padding-top: 4px;
+          border-top: 1px dashed rgba(99, 102, 241, 0.2);
+        }
+
+        .div-tax-note {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 0.65rem 0.9rem;
+          background: rgba(16, 185, 129, 0.06);
+          border: 1px solid rgba(16, 185, 129, 0.18);
+          border-radius: 8px;
+          font-size: 0.75rem;
+          color: var(--text-secondary);
+        }
 
         .total-capital-row {
           display: flex;

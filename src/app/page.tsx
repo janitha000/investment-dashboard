@@ -44,10 +44,18 @@ interface TreasuryInvestment {
   tenureDaysOrYears: number;
 }
 
+interface DividendInvestment {
+  id: string;
+  company: string;
+  amount: number;
+  yearlyDividend: number;
+}
+
 interface PortfolioState {
   fds: FdInvestment[];
   uts: UtInvestment[];
   treasury: TreasuryInvestment[];
+  dividends?: DividendInvestment[];
 }
 
 export default function Dashboard() {
@@ -149,7 +157,7 @@ export default function Dashboard() {
 
   // Helper calculations for portfolio totals
   const getPortfolioTotals = () => {
-    if (!portfolio) return { invested: 0, fds: 0, uts: 0, treasury: 0, gross: 0, netWht: 0, wht: 0, netIit: 0 };
+    if (!portfolio) return { invested: 0, fds: 0, uts: 0, treasury: 0, dividends: 0, gross: 0, netWht: 0, wht: 0, netIit: 0 };
 
     let fdInvested = 0;
     let fdGross = 0;
@@ -157,7 +165,7 @@ export default function Dashboard() {
     let fdWht = 0;
     let fdNetIit = 0;
 
-    portfolio.fds.forEach(item => {
+    (portfolio.fds || []).forEach(item => {
       const gross = item.amount * (item.rate / 100);
       const tax = gross * 0.10;
       const iit = gross * 0.36;
@@ -174,7 +182,7 @@ export default function Dashboard() {
     let utWht = 0;
     let utNetIit = 0;
 
-    portfolio.uts.forEach(item => {
+    (portfolio.uts || []).forEach(item => {
       const gross = item.amount * (item.rate / 100);
       const isFiof = item.fund.toUpperCase().includes("FIOF") || 
                      item.fund.toLowerCase().includes("first income opportunities");
@@ -191,7 +199,7 @@ export default function Dashboard() {
     let trWht = 0;
     let trNetIit = 0;
 
-    portfolio.treasury.forEach(item => {
+    (portfolio.treasury || []).forEach(item => {
       const gross = item.amount * (item.rate / 100);
       const tax = gross * 0.10;
       const iit = gross * 0.36;
@@ -202,17 +210,26 @@ export default function Dashboard() {
       trNetIit += (gross - iit);
     });
 
-    const grandInvested = fdInvested + utInvested + trInvested;
-    const grandGross = fdGross + utGross + trGross;
-    const grandNetWht = fdNetWht + utNetWht + trNetWht;
+    let divInvested = 0;
+    let divGross = 0;
+
+    (portfolio.dividends || []).forEach(item => {
+      divInvested += item.amount;
+      divGross += item.yearlyDividend; // Tax-free
+    });
+
+    const grandInvested = fdInvested + utInvested + trInvested + divInvested;
+    const grandGross = fdGross + utGross + trGross + divGross;
+    const grandNetWht = fdNetWht + utNetWht + trNetWht + divGross;
     const grandWht = fdWht + utWht + trWht;
-    const grandNetIit = fdNetIit + utNetIit + trNetIit;
+    const grandNetIit = fdNetIit + utNetIit + trNetIit + divGross;
 
     return {
       invested: grandInvested,
       fds: fdInvested,
       uts: utInvested,
       treasury: trInvested,
+      dividends: divInvested,
       gross: grandGross,
       netWht: grandNetWht,
       wht: grandWht,
@@ -307,6 +324,10 @@ export default function Dashboard() {
                 <span className="col-val text-indigo">{formatLKR(totals.treasury)}</span>
               </div>
               <div className="home-portfolio-col">
+                <span className="col-lbl">Dividends (Tax-Free)</span>
+                <span className="col-val" style={{ color: "#6366f1" }}>{formatLKR(totals.dividends)}</span>
+              </div>
+              <div className="home-portfolio-col">
                 <span className="col-lbl">
                   {incomePeriod === "monthly" ? "Gross Monthly Income" : "Gross Annual Income"}
                 </span>
@@ -350,6 +371,14 @@ export default function Dashboard() {
                   Treasury ({Math.round((totals.treasury / totals.invested) * 100)}%)
                 </div>
               )}
+              {totals.dividends > 0 && (
+                <div 
+                  className="bar-segment div-segment" 
+                  style={{ width: `${(totals.dividends / totals.invested) * 100}%` }}
+                >
+                  Div ({Math.round((totals.dividends / totals.invested) * 100)}%)
+                </div>
+              )}
             </div>
 
             {/* Tax brackets display */}
@@ -370,7 +399,7 @@ export default function Dashboard() {
           <div className="glass-card welcome-portfolio-pitch-card">
             <div className="pitch-text-box">
               <h4>Build and Simulate Your Current Portfolio</h4>
-              <p>Add your active Fixed Deposits, Unit Trusts, and Treasury Holdings to track cumulative yield generation, visualize asset allocation, and calculate WHT vs. 36% personal tax bracket impacts.</p>
+              <p>Add your active Fixed Deposits, Unit Trusts, Treasury Holdings, and Dividend stocks to track cumulative yield generation, visualize asset allocation, and calculate WHT vs. 36% personal tax bracket impacts.</p>
             </div>
             <Link href="/portfolio" className="pitch-portfolio-btn">
               Configure My Portfolio
@@ -708,6 +737,11 @@ export default function Dashboard() {
 
         .tr-segment {
           background: var(--color-indigo);
+          color: #ffffff;
+        }
+
+        .div-segment {
+          background: #6366f1;
           color: #ffffff;
         }
 
