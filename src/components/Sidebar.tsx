@@ -18,7 +18,8 @@ import {
   Settings,
   Briefcase,
   Coins,
-  Globe
+  Globe,
+  FlaskConical
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -30,6 +31,7 @@ export default function Sidebar() {
   const menuItems = [
     { name: "Overview Dashboard", href: "/", icon: Home },
     { name: "My Portfolio", href: "/portfolio", icon: Briefcase },
+    { name: "What-If Scenarios", href: "/scenarios", icon: FlaskConical },
     { name: "Fixed Deposits", href: "/fixed-deposits", icon: Landmark },
     { name: "Unit Trusts", href: "/unit-trusts", icon: Compass },
     { name: "Treasury Securities", href: "/treasury", icon: Wallet },
