@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRates } from "@/context/RatesContext";
+import { calcProgressiveIit } from "@/lib/tax";
 import PortfolioSimulator from "@/components/PortfolioSimulator";
 import {
   TrendingUp,
@@ -168,55 +169,46 @@ export default function Dashboard() {
 
   // Helper calculations for portfolio totals
   const getPortfolioTotals = () => {
-    if (!portfolio) return { invested: 0, fds: 0, uts: 0, treasury: 0, dividends: 0, pfcaFds: 0, gross: 0, netWht: 0, wht: 0, netIit: 0 };
+    if (!portfolio) return { invested: 0, fds: 0, uts: 0, treasury: 0, dividends: 0, pfcaFds: 0, gross: 0, netWht: 0, wht: 0, netIit: 0, iitPayable: 0 };
 
     let fdInvested = 0;
     let fdGross = 0;
     let fdNetWht = 0;
     let fdWht = 0;
-    let fdNetIit = 0;
 
     (portfolio.fds || []).forEach(item => {
       const gross = item.amount * (item.rate / 100);
       const tax = gross * 0.10;
-      const iit = gross * 0.36;
       fdInvested += item.amount;
       fdGross += gross;
       fdNetWht += (gross - tax);
       fdWht += tax;
-      fdNetIit += (gross - iit);
     });
 
     let utInvested = 0;
     let utGross = 0;
     let utNetWht = 0;
-    let utWht = 0;
-    let utNetIit = 0;
+    const utWht = 0;
 
     (portfolio.uts || []).forEach(item => {
       const gross = item.amount * (item.rate / 100);
-      const iit = gross * 0.36;
       utInvested += item.amount;
       utGross += gross;
       utNetWht += gross; // Yield already quoted net of WHT
-      utNetIit += (gross - iit);
     });
 
     let trInvested = 0;
     let trGross = 0;
     let trNetWht = 0;
     let trWht = 0;
-    let trNetIit = 0;
 
     (portfolio.treasury || []).forEach(item => {
       const gross = item.amount * (item.rate / 100);
       const tax = gross * 0.10;
-      const iit = gross * 0.36;
       trInvested += item.amount;
       trGross += gross;
       trNetWht += (gross - tax);
       trWht += tax;
-      trNetIit += (gross - iit);
     });
 
     let divInvested = 0;
@@ -243,7 +235,9 @@ export default function Dashboard() {
     const grandGross = fdGross + utGross + trGross + divGross + pfcaGross;
     const grandNetWht = fdNetWht + utNetWht + trNetWht + divGross + pfcaGross;
     const grandWht = fdWht + utWht + trWht;
-    const grandNetIit = fdNetIit + utNetIit + trNetIit + divGross + pfcaGross;
+    // Progressive IIT on pooled FD + UT + Treasury income, crediting WHT already withheld
+    const iit = calcProgressiveIit(fdGross + utGross + trGross, fdWht + trWht);
+    const grandNetIit = grandNetWht - iit.balancePayable;
 
     return {
       invested: grandInvested,
@@ -255,7 +249,8 @@ export default function Dashboard() {
       gross: grandGross,
       netWht: grandNetWht,
       wht: grandWht,
-      netIit: grandNetIit
+      netIit: grandNetIit,
+      iitPayable: iit.balancePayable
     };
   };
 
@@ -419,8 +414,11 @@ export default function Dashboard() {
             <div className="portfolio-home-tax-box">
               <div className="tax-summary-row">
                 <span style={{ color: "#d8b4fe" }}>
-                  {incomePeriod === "monthly" ? "Net Monthly after 36% Individual Income Tax (IIT): " : "Net Annual after 36% Individual Income Tax (IIT): "}
+                  {incomePeriod === "monthly" ? "Net Monthly after progressive IIT: " : "Net Annual after progressive IIT: "}
                   <strong>{formatLKR(incomePeriod === "monthly" ? totals.netIit / 12 : totals.netIit)}</strong>
+                  <span style={{ color: "var(--text-muted)", fontWeight: 600 }}>
+                    {" "}(IIT payable {formatLKR(incomePeriod === "monthly" ? totals.iitPayable / 12 : totals.iitPayable)})
+                  </span>
                 </span>
               </div>
             </div>
@@ -433,7 +431,7 @@ export default function Dashboard() {
           <div className="glass-card welcome-portfolio-pitch-card">
             <div className="pitch-text-box">
               <h4>Build and Simulate Your Current Portfolio</h4>
-              <p>Add your active Fixed Deposits, Unit Trusts, Treasury Holdings, Dividends, and PFCA FDs to track cumulative yield generation, visualize asset allocation, and calculate WHT vs. 36% personal tax bracket impacts.</p>
+              <p>Add your active Fixed Deposits, Unit Trusts, Treasury Holdings, Dividends, and PFCA FDs to track cumulative yield generation, visualize asset allocation, and calculate WHT vs. progressive income tax impacts.</p>
             </div>
             <Link href="/portfolio" className="pitch-portfolio-btn">
               Configure My Portfolio
@@ -521,7 +519,7 @@ export default function Dashboard() {
                   <td>Low</td>
                   <td>No Guarantee (highly diversified)</td>
                   <td>Daily compounding / monthly payout</td>
-                  <td>Quoted yield is net of WHT; 36% IIT applies</td>
+                  <td>Quoted yield is net of WHT; progressive IIT applies</td>
                 </tr>
                 <tr>
                   <td><strong>Fixed Deposits (FD)</strong></td>

@@ -6,6 +6,7 @@ import {
   Wallet, Copy, BarChart3, TrendingUp,
   Pencil, Check, X
 } from "lucide-react";
+import { calcProgressiveIit, PERSONAL_RELIEF } from "@/lib/tax";
 
 interface FdItem { id: string; institution: string; amount: number; rate: number; }
 interface UtItem { id: string; fund: string; amount: number; rate: number; }
@@ -64,28 +65,7 @@ function calcReturns(item: ScenarioItem) {
   return { gross, interest, fxGain, wht, netWht, iitLiable };
 }
 
-/** YoA 2025/2026 Sri Lanka resident IIT — personal relief then progressive slabs */
-const PERSONAL_RELIEF = 1_800_000;
-const IIT_SLABS: { upTo: number; rate: number }[] = [
-  { upTo: 1_000_000, rate: 0.06 },
-  { upTo: 500_000, rate: 0.18 },
-  { upTo: 500_000, rate: 0.24 },
-  { upTo: 500_000, rate: 0.30 },
-  { upTo: Infinity, rate: 0.36 },
-];
-
-function calcProgressiveIit(taxableIncome: number): { relief: number; taxableAfterRelief: number; tax: number } {
-  const relief = Math.min(PERSONAL_RELIEF, Math.max(0, taxableIncome));
-  let remaining = Math.max(0, taxableIncome - PERSONAL_RELIEF);
-  let tax = 0;
-  for (const slab of IIT_SLABS) {
-    if (remaining <= 0) break;
-    const slice = Math.min(remaining, slab.upTo);
-    tax += slice * slab.rate;
-    remaining -= slice;
-  }
-  return { relief, taxableAfterRelief: Math.max(0, taxableIncome - PERSONAL_RELIEF), tax };
-}
+/** Progressive IIT lives in @/lib/tax — shared with My Portfolio */
 
 function portfolioToItems(p: PortfolioState): ScenarioItem[] {
   const items: ScenarioItem[] = [];
@@ -142,22 +122,22 @@ function calcTotals(items: ScenarioItem[]) {
       coreGross += r.gross;
     }
   });
-  const progressive = calcProgressiveIit(iitAssessable);
+  const progressive = calcProgressiveIit(iitAssessable, whtCredit);
   // WHT already withheld is a credit against the progressive liability
-  const iitBalancePayable = Math.max(0, progressive.tax - whtCredit);
+  const iitBalancePayable = progressive.balancePayable;
   const netIit = netWht - iitBalancePayable; // annual; divide by 12 for monthly display
   const coreYield = coreInvested > 0 ? (coreGross / coreInvested) * 100 : 0;
   const taxFreeYield = taxFreeInvested > 0 ? (taxFreeGross / taxFreeInvested) * 100 : 0;
   const usdCapitalGainYield = pfcaInvested > 0 ? (usdCapitalGain / pfcaInvested) * 100 : 0;
   const combinedYield = invested > 0 ? (gross / invested) * 100 : 0;
-  const effectiveIitRate = iitAssessable > 0 ? (progressive.tax / iitAssessable) * 100 : 0;
+  const effectiveIitRate = progressive.effectiveRate;
   return {
     invested, gross, netWht, netIit,
     iitAssessable,
     iitRelief: progressive.relief,
-    iitTaxable: progressive.taxableAfterRelief,
-    iitTaxGross: progressive.tax,
-    whtCredit,
+    iitTaxable: progressive.taxableIncome,
+    iitTaxGross: progressive.slabTax,
+    whtCredit: progressive.whtCredit,
     iitTax: iitBalancePayable,
     effectiveIitRate,
     coreInvested, coreGross, coreYield,

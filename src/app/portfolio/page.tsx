@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRates } from "@/context/RatesContext";
+import { calcProgressiveIit, PERSONAL_RELIEF } from "@/lib/tax";
 import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe } from "lucide-react";
 
 interface FdInvestment {
@@ -542,7 +543,13 @@ export default function PortfolioPage() {
   const grandTotalGross = fdTotals.gross + utTotals.gross + treasuryTotals.gross + dividendTotals.gross + pfcaTotals.gross;
   const grandTotalNetWht = fdTotals.netWht + utTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht + pfcaTotals.netWht;
   const grandTotalWht = fdTotals.whtDeducted + utTotals.whtDeducted + treasuryTotals.whtDeducted + dividendTotals.whtDeducted + pfcaTotals.whtDeducted;
-  const grandTotalNetIit = fdTotals.netIit + utTotals.netIit + treasuryTotals.netIit + dividendTotals.netIit + pfcaTotals.netIit;
+
+  // Progressive IIT on the pooled annual income of all IIT-liable sources (FD + UT + Treasury).
+  // Dividends and PFCA are exempt. WHT withheld on FD/Treasury is credited against the slab tax.
+  const iitAssessableIncome = fdTotals.gross + utTotals.gross + treasuryTotals.gross;
+  const iitWhtCredit = fdTotals.whtDeducted + treasuryTotals.whtDeducted;
+  const iit = calcProgressiveIit(iitAssessableIncome, iitWhtCredit);
+  const grandTotalNetIit = grandTotalNetWht - iit.balancePayable;
 
   // Split yields: core (FD/UT/Treasury) vs tax-free interest (Dividend/PFCA) vs USD capital gain
   const coreInvested = fdTotals.invested + utTotals.invested + treasuryTotals.invested;
@@ -557,9 +564,13 @@ export default function PortfolioPage() {
   const usdCapitalGainYield = pfcaTotals.invested > 0 ? (usdCapitalGain / pfcaTotals.invested) * 100 : 0;
   const combinedYield = grandTotalInvested > 0 ? (grandTotalGross / grandTotalInvested) * 100 : 0;
 
-  // Spendable cash income: net after WHT from FD + Treasury + Dividends + PFCA interest (excludes UT & FX valuation)
+  // Spendable cash income: net after WHT from FD + UT + Treasury + Dividends + PFCA interest (excludes FX valuation)
   const physicalCashAvailable =
-    fdTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht + pfcaTotals.interestLkr;
+    fdTotals.netWht + utTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht + pfcaTotals.interestLkr;
+
+  // Each category's share of the portfolio-wide IIT balance, pro-rated by its contribution to the pool
+  const iitShare = (categoryGross: number) =>
+    iitAssessableIncome > 0 ? iit.balancePayable * (categoryGross / iitAssessableIncome) : 0;
 
   // Preset rates autocomplete when forms load
   useEffect(() => {
@@ -580,7 +591,7 @@ export default function PortfolioPage() {
         <span className="badge badge-teal">My Capital</span>
         <h1 className="page-title">Current Investment Portfolio</h1>
         <p className="page-subtitle">
-          Manage your active investments, track annual interest flows, and compare income yields under standard WHT vs. 36% personal tax brackets.
+          Manage your active investments, track annual interest flows, and compare income under WHT vs. progressive personal income tax (YoA 2025/26).
         </p>
       </div>
 
@@ -668,10 +679,13 @@ export default function PortfolioPage() {
           </div>
           <div className="summary-col">
             <span className="summary-lbl">
-              {incomePeriod === "monthly" ? "Net Monthly (After 36% IIT)" : "Net Annual (After 36% IIT)"}
+              {incomePeriod === "monthly" ? "Net Monthly (After Progressive IIT)" : "Net Annual (After Progressive IIT)"}
             </span>
             <span className="summary-val" style={{ color: "#d8b4fe" }}>
               {formatLKR(incomePeriod === "monthly" ? grandTotalNetIit / 12 : grandTotalNetIit)}
+            </span>
+            <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 600, marginTop: "2px" }}>
+              Progressive slabs on pooled income
             </span>
           </div>
           <div className="summary-col">
@@ -682,10 +696,60 @@ export default function PortfolioPage() {
               {formatLKR(incomePeriod === "monthly" ? physicalCashAvailable / 12 : physicalCashAvailable)}
             </span>
             <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 600, marginTop: "2px" }}>
-              FD + Treasury + Div + PFCA interest (after WHT)
+              FD + UT + Treasury + Div + PFCA interest (after WHT)
             </span>
           </div>
         </div>
+
+        {iitAssessableIncome > 0 && (
+          <div className="iit-breakdown">
+            <div className="iit-bd-title">
+              <Percent size={14} /> Progressive IIT — Year of Assessment 2025/26
+            </div>
+            <div className="iit-bd-grid">
+              <div className="iit-bd-row">
+                <span>Pooled annual income (FD + UT + Treasury)</span>
+                <strong>{formatLKR(iitAssessableIncome)}</strong>
+              </div>
+              <div className="iit-bd-row">
+                <span>Less: personal relief</span>
+                <strong className="text-emerald">−{formatLKR(iit.relief)}</strong>
+              </div>
+              <div className="iit-bd-row">
+                <span>Taxable income</span>
+                <strong>{formatLKR(iit.taxableIncome)}</strong>
+              </div>
+              {iit.slabs.map((slab, i) => (
+                <div className="iit-bd-row slab" key={i}>
+                  <span>{formatLKR(slab.incomeInSlab)} @ {(slab.rate * 100).toFixed(0)}%</span>
+                  <strong>{formatLKR(slab.tax)}</strong>
+                </div>
+              ))}
+              <div className="iit-bd-row">
+                <span>Total slab tax</span>
+                <strong>{formatLKR(iit.slabTax)}</strong>
+              </div>
+              <div className="iit-bd-row">
+                <span>Less: WHT already paid (FD + Treasury)</span>
+                <strong className="text-emerald">−{formatLKR(iit.whtCredit)}</strong>
+              </div>
+              <div className="iit-bd-row total">
+                <span>Balance IIT payable</span>
+                <strong style={{ color: "#f87171" }}>
+                  {formatLKR(iit.balancePayable)} /yr · {formatLKR(iit.balancePayable / 12)} /mo
+                </strong>
+              </div>
+              <div className="iit-bd-row">
+                <span>Effective rate on pooled income</span>
+                <strong style={{ color: "#d8b4fe" }}>{iit.effectiveRate.toFixed(2)}%</strong>
+              </div>
+            </div>
+            <p className="iit-bd-note">
+              Relief of {formatLKR(PERSONAL_RELIEF)} then 6% / 18% / 24% / 30% / 36% slabs, applied once to total
+              income — not per category. Dividends and PFCA are exempt and excluded from the pool.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Category Wise Totals Cards */}
@@ -721,8 +785,8 @@ export default function PortfolioPage() {
               <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? fdTotals.netWht / 12 : fdTotals.netWht)}</span>
             </div>
             <div className="metric-item">
-              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (36% IIT):</span>
-              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? fdTotals.netIit / 12 : fdTotals.netIit)}</span>
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (Prog. IIT share):</span>
+              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? (fdTotals.netWht - iitShare(fdTotals.gross)) / 12 : fdTotals.netWht - iitShare(fdTotals.gross))}</span>
             </div>
           </div>
         </div>
@@ -758,8 +822,8 @@ export default function PortfolioPage() {
               <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? utTotals.netWht / 12 : utTotals.netWht)}</span>
             </div>
             <div className="metric-item">
-              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (36% IIT):</span>
-              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? utTotals.netIit / 12 : utTotals.netIit)}</span>
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (Prog. IIT share):</span>
+              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? (utTotals.netWht - iitShare(utTotals.gross)) / 12 : utTotals.netWht - iitShare(utTotals.gross))}</span>
             </div>
           </div>
         </div>
@@ -795,8 +859,8 @@ export default function PortfolioPage() {
               <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? treasuryTotals.netWht / 12 : treasuryTotals.netWht)}</span>
             </div>
             <div className="metric-item">
-              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (36% IIT):</span>
-              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? treasuryTotals.netIit / 12 : treasuryTotals.netIit)}</span>
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (Prog. IIT share):</span>
+              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? (treasuryTotals.netWht - iitShare(treasuryTotals.gross)) / 12 : treasuryTotals.netWht - iitShare(treasuryTotals.gross))}</span>
             </div>
           </div>
         </div>
@@ -1047,7 +1111,7 @@ export default function PortfolioPage() {
                                   <th>Period</th>
                                   <th>Gross Income</th>
                                   <th>Net (After WHT)</th>
-                                  <th>Net (After 36% IIT)</th>
+                                  <th>Net (Prog. IIT share)</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1055,13 +1119,13 @@ export default function PortfolioPage() {
                                   <td className="period-col">Monthly</td>
                                   <td>{formatLKR(res.annualGross / 12)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht / 12)}</td>
-                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit / 12)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR((res.netWht - iitShare(res.annualGross)) / 12)}</td>
                                 </tr>
                                 <tr>
                                   <td className="period-col">Annually</td>
                                   <td>{formatLKR(res.annualGross)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht)}</td>
-                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netWht - iitShare(res.annualGross))}</td>
                                 </tr>
                               </tbody>
                             </table>
@@ -1291,7 +1355,7 @@ export default function PortfolioPage() {
                                   <th>Period</th>
                                   <th>Gross Income</th>
                                   <th>Net (After WHT)</th>
-                                  <th>Net (After 36% IIT)</th>
+                                  <th>Net (Prog. IIT share)</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1299,13 +1363,13 @@ export default function PortfolioPage() {
                                   <td className="period-col">Monthly</td>
                                   <td>{formatLKR(res.annualGross / 12)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht / 12)}</td>
-                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit / 12)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR((res.netWht - iitShare(res.annualGross)) / 12)}</td>
                                 </tr>
                                 <tr>
                                   <td className="period-col">Annually</td>
                                   <td>{formatLKR(res.annualGross)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht)}</td>
-                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netWht - iitShare(res.annualGross))}</td>
                                 </tr>
                               </tbody>
                             </table>
@@ -1318,7 +1382,7 @@ export default function PortfolioPage() {
                             </div>
                             <div className="tax-sub-item">
                               <Info size={12} style={{ color: "#ef4444", marginRight: "4px" }} />
-                              <span>Individual Income Tax (IIT): <strong style={{ color: "#ef4444" }}>Subject to Tax (36% IIT applies)</strong></span>
+                              <span>Individual Income Tax (IIT): <strong style={{ color: "#d8b4fe" }}>Included in portfolio progressive IIT pool</strong></span>
                             </div>
                           </div>
                         </div>
@@ -1579,7 +1643,7 @@ export default function PortfolioPage() {
                                   <th>Period</th>
                                   <th>Gross Coupon</th>
                                   <th>Net (After 10% WHT)</th>
-                                  <th>Net (After 36% IIT)</th>
+                                  <th>Net (Prog. IIT share)</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1587,19 +1651,19 @@ export default function PortfolioPage() {
                                   <td className="period-col">Per Coupon</td>
                                   <td>{item.couponValue ? formatLKR(item.couponValue) : "—"}</td>
                                   <td className="text-emerald">{item.couponValue ? formatLKR(item.couponValue * 0.9) : "—"}</td>
-                                  <td style={{ color: "#d8b4fe" }}>{item.couponValue ? formatLKR(item.couponValue * 0.64) : "—"}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{item.couponValue ? formatLKR((res.netWht - iitShare(res.annualGross)) / 2) : "—"}</td>
                                 </tr>
                                 <tr>
                                   <td className="period-col">Monthly</td>
                                   <td>{formatLKR(res.annualGross / 12)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht / 12)}</td>
-                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit / 12)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR((res.netWht - iitShare(res.annualGross)) / 12)}</td>
                                 </tr>
                                 <tr>
                                   <td className="period-col">Annually</td>
                                   <td>{formatLKR(res.annualGross)}</td>
                                   <td className="text-emerald">{formatLKR(res.netWht)}</td>
-                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netWht - iitShare(res.annualGross))}</td>
                                 </tr>
                               </tbody>
                             </table>
@@ -2201,6 +2265,74 @@ export default function PortfolioPage() {
           display: flex;
           flex-direction: column;
           gap: 4px;
+        }
+
+        .iit-breakdown {
+          margin-top: 1.25rem;
+          padding: 14px 16px;
+          border: 1px solid rgba(216, 180, 254, 0.2);
+          border-radius: 10px;
+          background: rgba(216, 180, 254, 0.05);
+        }
+
+        .iit-bd-title {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.72rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #d8b4fe;
+          margin-bottom: 10px;
+        }
+
+        .iit-bd-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 4px 2rem;
+        }
+
+        @media (max-width: 768px) {
+          .iit-bd-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .iit-bd-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: 12px;
+          font-size: 0.76rem;
+          color: var(--text-secondary);
+          padding: 3px 0;
+        }
+
+        .iit-bd-row strong {
+          font-family: var(--font-display);
+          font-weight: 700;
+          color: var(--text-primary);
+          white-space: nowrap;
+        }
+
+        .iit-bd-row.slab {
+          color: var(--text-muted);
+          padding-left: 10px;
+          border-left: 2px solid rgba(216, 180, 254, 0.25);
+        }
+
+        .iit-bd-row.total {
+          border-top: 1px solid var(--border-color);
+          margin-top: 4px;
+          padding-top: 7px;
+        }
+
+        .iit-bd-note {
+          margin: 10px 0 0;
+          font-size: 0.68rem;
+          line-height: 1.5;
+          color: var(--text-muted);
         }
 
         .summary-lbl {
