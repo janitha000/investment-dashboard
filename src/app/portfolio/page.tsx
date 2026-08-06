@@ -445,34 +445,42 @@ export default function PortfolioPage() {
                             </button>
                           </div>
 
-                          <div className="item-values-grid">
-                            <div className="val-block">
-                              <span className="val-lbl">Principal</span>
-                              <span className="val-num text-teal">{formatLKR(item.amount)}</span>
+                          <div className="card-top-info-row">
+                            <div className="info-badge-val">
+                              <span className="lbl">Principal:</span>
+                              <span className="val text-teal">{formatLKR(item.amount)}</span>
                             </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Rate</span>
-                              <span className="val-num">{item.rate.toFixed(2)}%</span>
-                            </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Net Monthly</span>
-                              <span className="val-num text-emerald">{formatLKR(res.netWht / 12)}</span>
-                            </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Net Annual</span>
-                              <span className="val-num text-emerald">{formatLKR(res.netWht)}</span>
+                            <div className="info-badge-val">
+                              <span className="lbl">Interest Rate:</span>
+                              <span className="val text-white">{item.rate.toFixed(2)}%</span>
                             </div>
                           </div>
 
-                          <div className="tax-comparisons-strip">
-                            <div className="tax-sub-item">
-                              <span>WHT Deducted (10%):</span>
-                              <span className="text-coral">-{formatLKR(res.wht)}</span>
-                            </div>
-                            <div className="tax-sub-item highlight-purple">
-                              <span>Net 36% IIT Income:</span>
-                              <span>{formatLKR(res.netIit)}</span>
-                            </div>
+                          <div className="item-mini-table-wrapper">
+                            <table className="item-mini-table">
+                              <thead>
+                                <tr>
+                                  <th>Period</th>
+                                  <th>Gross Income</th>
+                                  <th>Net (After WHT)</th>
+                                  <th>Net (After 36% IIT)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td className="period-col">Monthly</td>
+                                  <td>{formatLKR(res.annualGross / 12)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netWht / 12)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit / 12)}</td>
+                                </tr>
+                                <tr>
+                                  <td className="period-col">Annually</td>
+                                  <td>{formatLKR(res.annualGross)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netWht)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       );
@@ -1173,6 +1181,70 @@ export default function PortfolioPage() {
         .highlight-purple {
           color: #d8b4fe;
           font-weight: 600;
+        }
+
+        .card-top-info-row {
+          display: flex;
+          gap: 1.5rem;
+          margin-bottom: 0.85rem;
+          background: rgba(255, 255, 255, 0.01);
+          border: 1px solid var(--border-color);
+          padding: 8px 12px;
+          border-radius: 6px;
+        }
+
+        .info-badge-val {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.8rem;
+        }
+
+        .info-badge-val .lbl {
+          color: var(--text-muted);
+          font-weight: 500;
+        }
+
+        .info-badge-val .val {
+          font-weight: 700;
+          font-family: var(--font-display);
+        }
+
+        .item-mini-table-wrapper {
+          overflow-x: auto;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          background: rgba(4, 6, 12, 0.2);
+        }
+
+        .item-mini-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.775rem;
+          text-align: left;
+        }
+
+        .item-mini-table th {
+          background: rgba(255,255,255,0.01);
+          color: var(--text-muted);
+          padding: 6px 10px;
+          font-weight: 600;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .item-mini-table td {
+          padding: 6px 10px;
+          border-bottom: 1px solid rgba(255,255,255,0.02);
+          color: var(--text-secondary);
+        }
+
+        .item-mini-table tr:last-child td {
+          border-bottom: none;
+        }
+
+        .item-mini-table .period-col {
+          font-weight: 700;
+          color: var(--text-primary);
         }
 
         .tax-banner {
