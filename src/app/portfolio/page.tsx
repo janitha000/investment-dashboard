@@ -258,9 +258,16 @@ export default function PortfolioPage() {
         <div className="portfolio-overview-header">
           <div className="overview-title-info">
             <span className="summary-lbl">Total Capital Invested</span>
-            <span className="summary-val text-teal" style={{ fontSize: "1.7rem", marginTop: "4px" }}>
-              {formatLKR(grandTotalInvested)}
-            </span>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap" }}>
+              <span className="summary-val text-teal" style={{ fontSize: "1.7rem", marginTop: "4px" }}>
+                {formatLKR(grandTotalInvested)}
+              </span>
+              {grandTotalInvested > 0 && (
+                <span className="badge badge-teal" style={{ fontSize: "0.75rem", padding: "2px 6px" }}>
+                  {((grandTotalGross / grandTotalInvested) * 100).toFixed(2)}% Weighted Yield
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="income-period-tabs">
@@ -305,6 +312,120 @@ export default function PortfolioPage() {
             <span className="summary-val" style={{ color: "#d8b4fe" }}>
               {formatLKR(incomePeriod === "monthly" ? grandTotalNetIit / 12 : grandTotalNetIit)}
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Category Wise Totals Cards */}
+      <div className="category-totals-row">
+        {/* FD Totals Card */}
+        <div className="glass-card category-total-card animate-fade-in">
+          <div className="card-header">
+            <div className="title-box">
+              <Landmark size={18} className="icon-fd" />
+              <h5>Fixed Deposits (FD)</h5>
+            </div>
+            <span className="badge badge-teal">FD Total</span>
+          </div>
+          <div className="total-capital-row">
+            <span className="lbl">Total Invested:</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <span className="val text-teal">{formatLKR(fdTotals.invested)}</span>
+              {fdTotals.invested > 0 && (
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: "600", marginTop: "2px" }}>
+                  Avg. Rate: {((fdTotals.gross / fdTotals.invested) * 100).toFixed(2)}% p.a.
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="divider-h" style={{ margin: "8px 0" }} />
+          <div className="category-metrics-list">
+            <div className="metric-item">
+              <span>Gross {incomePeriod === "monthly" ? "Monthly" : "Annual"} Income:</span>
+              <span className="val-text">{formatLKR(incomePeriod === "monthly" ? fdTotals.gross / 12 : fdTotals.gross)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (WHT):</span>
+              <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? fdTotals.netWht / 12 : fdTotals.netWht)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (36% IIT):</span>
+              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? fdTotals.netIit / 12 : fdTotals.netIit)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* UT Totals Card */}
+        <div className="glass-card category-total-card animate-fade-in">
+          <div className="card-header">
+            <div className="title-box">
+              <Compass size={18} className="icon-ut" />
+              <h5>Unit Trusts (UT)</h5>
+            </div>
+            <span className="badge badge-emerald">UT Total</span>
+          </div>
+          <div className="total-capital-row">
+            <span className="lbl">Total Invested:</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <span className="val text-emerald">{formatLKR(utTotals.invested)}</span>
+              {utTotals.invested > 0 && (
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: "600", marginTop: "2px" }}>
+                  Avg. Yield: {((utTotals.gross / utTotals.invested) * 100).toFixed(2)}% p.a.
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="divider-h" style={{ margin: "8px 0" }} />
+          <div className="category-metrics-list">
+            <div className="metric-item">
+              <span>Gross {incomePeriod === "monthly" ? "Monthly" : "Annual"} Income:</span>
+              <span className="val-text">{formatLKR(incomePeriod === "monthly" ? utTotals.gross / 12 : utTotals.gross)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (WHT):</span>
+              <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? utTotals.netWht / 12 : utTotals.netWht)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (36% IIT):</span>
+              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? utTotals.netIit / 12 : utTotals.netIit)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Treasury Totals Card */}
+        <div className="glass-card category-total-card animate-fade-in">
+          <div className="card-header">
+            <div className="title-box">
+              <Wallet size={18} className="icon-tr" />
+              <h5>Treasury Securities</h5>
+            </div>
+            <span className="badge badge-indigo">Treasury Total</span>
+          </div>
+          <div className="total-capital-row">
+            <span className="lbl">Total Invested:</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <span className="val text-indigo">{formatLKR(treasuryTotals.invested)}</span>
+              {treasuryTotals.invested > 0 && (
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: "600", marginTop: "2px" }}>
+                  Avg. Rate: {((treasuryTotals.gross / treasuryTotals.invested) * 100).toFixed(2)}% p.a.
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="divider-h" style={{ margin: "8px 0" }} />
+          <div className="category-metrics-list">
+            <div className="metric-item">
+              <span>Gross {incomePeriod === "monthly" ? "Monthly" : "Annual"} Income:</span>
+              <span className="val-text">{formatLKR(incomePeriod === "monthly" ? treasuryTotals.gross / 12 : treasuryTotals.gross)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (WHT):</span>
+              <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? treasuryTotals.netWht / 12 : treasuryTotals.netWht)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (36% IIT):</span>
+              <span className="val-text" style={{ color: "#d8b4fe" }}>{formatLKR(incomePeriod === "monthly" ? treasuryTotals.netIit / 12 : treasuryTotals.netIit)}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1245,6 +1366,86 @@ export default function PortfolioPage() {
         .item-mini-table .period-col {
           font-weight: 700;
           color: var(--text-primary);
+        }
+
+        .category-totals-row {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1.5rem;
+          margin-bottom: 2rem;
+        }
+
+        @media (max-width: 900px) {
+          .category-totals-row {
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+          }
+        }
+
+        .category-total-card {
+          padding: 1.25rem;
+          background: rgba(9, 14, 26, 0.4);
+          border-color: rgba(255,255,255,0.04);
+        }
+
+        .category-total-card:hover {
+          border-color: rgba(255,255,255,0.08);
+          background: rgba(255,255,255,0.01);
+        }
+
+        .category-total-card .card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 0.75rem;
+        }
+
+        .category-total-card .title-box {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .category-total-card h5 {
+          font-family: var(--font-display);
+          font-size: 0.9rem;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .icon-fd { color: var(--color-teal); }
+        .icon-ut { color: var(--color-emerald); }
+        .icon-tr { color: var(--color-indigo); }
+
+        .total-capital-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 0.8rem;
+          font-weight: 600;
+        }
+
+        .total-capital-row .val {
+          font-family: var(--font-display);
+          font-size: 1.1rem;
+          font-weight: 800;
+        }
+
+        .category-metrics-list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .metric-item {
+          display: flex;
+          justify-content: space-between;
+          font-size: 0.75rem;
+          color: var(--text-secondary);
+        }
+
+        .metric-item .val-text {
+          font-weight: 600;
         }
 
         .tax-banner {

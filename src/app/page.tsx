@@ -255,7 +255,14 @@ export default function Dashboard() {
               <div className="portfolio-icon-title">
                 <Briefcase size={22} style={{ color: "var(--color-teal)" }} />
                 <div>
-                  <h3>{formatLKR(totals.invested)}</h3>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                    <h3>{formatLKR(totals.invested)}</h3>
+                    {totals.invested > 0 && (
+                      <span className="badge badge-teal" style={{ fontSize: "0.75rem", padding: "2px 6px" }}>
+                        {((totals.gross / totals.invested) * 100).toFixed(2)}% Weighted Yield
+                      </span>
+                    )}
+                  </div>
                   <p>Total Capital Invested across Asset Classes</p>
                 </div>
               </div>
