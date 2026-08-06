@@ -557,6 +557,10 @@ export default function PortfolioPage() {
   const usdCapitalGainYield = pfcaTotals.invested > 0 ? (usdCapitalGain / pfcaTotals.invested) * 100 : 0;
   const combinedYield = grandTotalInvested > 0 ? (grandTotalGross / grandTotalInvested) * 100 : 0;
 
+  // Spendable cash income: net after WHT from FD + Treasury + Dividends + PFCA interest (excludes UT & FX valuation)
+  const physicalCashAvailable =
+    fdTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht + pfcaTotals.interestLkr;
+
   // Preset rates autocomplete when forms load
   useEffect(() => {
     if (activeTab === "fds" && rates?.fixedDeposit?.bankAverage12m) {
@@ -668,6 +672,17 @@ export default function PortfolioPage() {
             </span>
             <span className="summary-val" style={{ color: "#d8b4fe" }}>
               {formatLKR(incomePeriod === "monthly" ? grandTotalNetIit / 12 : grandTotalNetIit)}
+            </span>
+          </div>
+          <div className="summary-col">
+            <span className="summary-lbl">
+              {incomePeriod === "monthly" ? "Physical Cash Available (Monthly)" : "Physical Cash Available (Annual)"}
+            </span>
+            <span className="summary-val" style={{ color: "#fbbf24" }}>
+              {formatLKR(incomePeriod === "monthly" ? physicalCashAvailable / 12 : physicalCashAvailable)}
+            </span>
+            <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 600, marginTop: "2px" }}>
+              FD + Treasury + Div + PFCA interest (after WHT)
             </span>
           </div>
         </div>
@@ -2165,13 +2180,13 @@ export default function PortfolioPage() {
 
         .portfolio-summary-bar {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 1.5rem;
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 1024px) {
           .portfolio-summary-bar {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, 1fr);
             gap: 1.25rem;
           }
         }
