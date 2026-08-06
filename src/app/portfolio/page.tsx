@@ -16,19 +16,28 @@ interface FdInvestment {
 interface UtInvestment {
   id: string;
   fund: string;
-  amount: number;
+  amount: number; // Current Balance
   rate: number;
   units?: number;
-  unitPrice?: number;
+  purchasePrice?: number; // Unit Cost
+  currentPrice?: number;  // Current Unit Price
   earnings?: number;
 }
 
 interface TreasuryInvestment {
   id: string;
   type: "tbill" | "tbond";
-  amount: number;
-  rate: number;
-  tenureDaysOrYears: number; // Days for bill, Years for bond
+  amount: number;            // Face Value (T-Bill) / INV Value (T-Bond)
+  rate: number;              // Yield (%)
+  tenureDaysOrYears: number; // Days for T-Bill, Years for T-Bond
+  // T-Bond specific fields
+  isin?: string;
+  dealSlip?: string;
+  faceValue?: number;        // Face Value (LKR)
+  couponRate?: number;       // Coupon Rate (%)
+  couponValue?: number;      // Bi-annual coupon payment (LKR)
+  couponMonth?: number;      // Month of first coupon (1–12)
+  maturityDate?: string;     // ISO date string e.g. "2029-06-15"
 }
 
 interface PortfolioState {
@@ -62,14 +71,31 @@ export default function PortfolioPage() {
   const [utRate, setUtRate] = useState<string>("");
   const [utInputMode, setUtInputMode] = useState<"simple" | "units">("simple");
   const [utUnits, setUtUnits] = useState<string>("");
-  const [utUnitPrice, setUtUnitPrice] = useState<string>("");
+  const [utUnitPrice, setUtUnitPrice] = useState<string>(""); // Used as Purchase Price / Unit Cost
+  const [utCurrentPriceInput, setUtCurrentPriceInput] = useState<string>(""); // Used as Current Unit Price
   const [utEarnings, setUtEarnings] = useState<string>("");
+
+  // Edit UT Modal states
+  const [editingUt, setEditingUt] = useState<UtInvestment | null>(null);
+  const [editUtFund, setEditUtFund] = useState<string>("");
+  const [editUtUnits, setEditUtUnits] = useState<string>("");
+  const [editUtCost, setEditUtCost] = useState<string>("");
+  const [editUtCurrentPrice, setEditUtCurrentPrice] = useState<string>("");
+  const [editUtRate, setEditUtRate] = useState<string>("");
 
   // Input states for Treasury Form
   const [trType, setTrType] = useState<"tbill" | "tbond">("tbill");
-  const [trAmount, setTrAmount] = useState<string>("");
+  const [trAmount, setTrAmount] = useState<string>("");  // INV Value for bond
   const [trRate, setTrRate] = useState<string>("");
   const [trTenure, setTrTenure] = useState<number>(364);
+  // T-Bond extra fields
+  const [trIsin, setTrIsin] = useState<string>("");
+  const [trDealSlip, setTrDealSlip] = useState<string>("");
+  const [trFaceValue, setTrFaceValue] = useState<string>("");
+  const [trCouponRate, setTrCouponRate] = useState<string>("");
+  const [trCouponValue, setTrCouponValue] = useState<string>("");
+  const [trCouponMonth, setTrCouponMonth] = useState<number>(6); // default June
+  const [trMaturityDate, setTrMaturityDate] = useState<string>("");
 
   // Load from local storage
   useEffect(() => {
@@ -120,20 +146,25 @@ export default function PortfolioPage() {
     if (!rateNum) return;
 
     let unitsNum: number | undefined;
-    let priceNum: number | undefined;
+    let purchasePriceNum: number | undefined;
+    let currentPriceNum: number | undefined;
     let earningsNum: number | undefined;
 
     if (utInputMode === "units") {
       unitsNum = parseFloat(utUnits);
-      priceNum = parseFloat(utUnitPrice);
-      if (unitsNum && priceNum) {
-        amountNum = unitsNum * priceNum;
+      purchasePriceNum = parseFloat(utUnitPrice); // Purchase Price
+      currentPriceNum = parseFloat(utCurrentPriceInput); // Current Price
+      if (unitsNum && currentPriceNum) {
+        amountNum = unitsNum * currentPriceNum;
+      }
+      if (unitsNum && currentPriceNum && purchasePriceNum) {
+        earningsNum = (unitsNum * currentPriceNum) - (unitsNum * purchasePriceNum);
       }
     }
 
     if (!amountNum) return;
 
-    if (utEarnings.trim()) {
+    if (utInputMode === "simple" && utEarnings.trim()) {
       earningsNum = parseFloat(utEarnings);
     }
 
@@ -143,7 +174,8 @@ export default function PortfolioPage() {
       amount: amountNum,
       rate: rateNum,
       units: unitsNum,
-      unitPrice: priceNum,
+      purchasePrice: purchasePriceNum,
+      currentPrice: currentPriceNum,
       earnings: earningsNum
     };
 
@@ -156,7 +188,57 @@ export default function PortfolioPage() {
     setUtRate("");
     setUtUnits("");
     setUtUnitPrice("");
+    setUtCurrentPriceInput("");
     setUtEarnings("");
+  };
+
+  const handleStartEditUt = (item: UtInvestment) => {
+    setEditingUt(item);
+    setEditUtFund(item.fund);
+    setEditUtUnits(item.units?.toString() || item.amount.toString());
+    setEditUtCost(item.purchasePrice?.toString() || "");
+    setEditUtCurrentPrice(item.currentPrice?.toString() || "");
+    setEditUtRate(item.rate.toString());
+  };
+
+  const handleSaveEditUt = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUt) return;
+
+    const rateNum = parseFloat(editUtRate);
+    if (!rateNum) return;
+
+    let updatedAmount = parseFloat(editUtUnits);
+    let unitsNum = parseFloat(editUtUnits);
+    let costNum = parseFloat(editUtCost);
+    let curPriceNum = parseFloat(editUtCurrentPrice);
+
+    if (editingUt.units && unitsNum && curPriceNum) {
+      updatedAmount = unitsNum * curPriceNum;
+    }
+
+    const updatedUts = portfolio.uts.map((item) => {
+      if (item.id === editingUt.id) {
+        return {
+          ...item,
+          fund: editUtFund,
+          amount: updatedAmount,
+          rate: rateNum,
+          units: editingUt.units ? unitsNum : undefined,
+          purchasePrice: editingUt.units ? costNum : undefined,
+          currentPrice: editingUt.units ? curPriceNum : undefined,
+          earnings: (editingUt.units && unitsNum && curPriceNum && costNum) ? (unitsNum * curPriceNum) - (unitsNum * costNum) : undefined
+        };
+      }
+      return item;
+    });
+
+    const updatedPortfolio = {
+      ...portfolio,
+      uts: updatedUts
+    };
+    savePortfolio(updatedPortfolio);
+    setEditingUt(null);
   };
 
   const handleAddTreasury = (e: React.FormEvent) => {
@@ -170,7 +252,16 @@ export default function PortfolioPage() {
       type: trType,
       amount: amountNum,
       rate: rateNum,
-      tenureDaysOrYears: trTenure
+      tenureDaysOrYears: trTenure,
+      ...(trType === "tbond" && {
+        isin: trIsin || undefined,
+        dealSlip: trDealSlip || undefined,
+        faceValue: trFaceValue ? parseFloat(trFaceValue) : undefined,
+        couponRate: trCouponRate ? parseFloat(trCouponRate) : undefined,
+        couponValue: trCouponValue ? parseFloat(trCouponValue) : undefined,
+        couponMonth: trCouponMonth,
+        maturityDate: trMaturityDate || undefined,
+      })
     };
 
     const updated = {
@@ -180,6 +271,12 @@ export default function PortfolioPage() {
     savePortfolio(updated);
     setTrAmount("");
     setTrRate("");
+    setTrIsin("");
+    setTrDealSlip("");
+    setTrFaceValue("");
+    setTrCouponRate("");
+    setTrCouponValue("");
+    setTrMaturityDate("");
   };
 
   const handleDeleteItem = (category: "fds" | "uts" | "treasury", id: string) => {
@@ -224,13 +321,31 @@ export default function PortfolioPage() {
   };
 
   const calculateTreasuryReturns = (item: TreasuryInvestment) => {
-    const annualGross = item.amount * (item.rate / 100);
+    // For T-Bonds with known coupon value, use annualised coupon (bi-annual × 2)
+    const annualGross = item.couponValue
+      ? item.couponValue * 2
+      : item.amount * (item.rate / 100);
     const wht = annualGross * 0.10;
     const netWht = annualGross - wht;
     const iit36 = annualGross * 0.36;
     const netIit = annualGross - iit36;
-    return { annualGross, wht, netWht, iit36, netIit };
+    // Next two coupon dates based on couponMonth
+    const nextCouponDates: string[] = [];
+    if (item.couponMonth) {
+      const now = new Date();
+      const m = item.couponMonth;
+      for (let yr = now.getFullYear(); nextCouponDates.length < 2; yr++) {
+        const d1 = new Date(yr, m - 1, 15);
+        const d2 = new Date(yr, m + 5, 15); // 6 months later
+        if (d1 > now) nextCouponDates.push(d1.toLocaleDateString("en-LK", { year: "numeric", month: "short", day: "numeric" }));
+        if (nextCouponDates.length < 2 && d2 > now) nextCouponDates.push(d2.toLocaleDateString("en-LK", { year: "numeric", month: "short", day: "numeric" }));
+        if (yr > now.getFullYear() + 2) break;
+      }
+    }
+    return { annualGross, wht, netWht, iit36, netIit, nextCouponDates };
   };
+
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   // Totals for summary panel
   const fdTotals = portfolio.fds.reduce((acc, item) => {
@@ -702,7 +817,7 @@ export default function PortfolioPage() {
                       />
                     </div>
                   ) : (
-                    <div className="input-row-double">
+                    <>
                       <div className="input-group">
                         <label>Units Held</label>
                         <input 
@@ -715,19 +830,33 @@ export default function PortfolioPage() {
                           required
                         />
                       </div>
-                      <div className="input-group">
-                        <label>Unit Price (LKR)</label>
-                        <input 
-                          type="number" 
-                          step="0.0001"
-                          value={utUnitPrice} 
-                          onChange={(e) => setUtUnitPrice(e.target.value)} 
-                          placeholder="e.g. 43.4257"
-                          className="glass-input"
-                          required
-                        />
+                      <div className="input-row-double">
+                        <div className="input-group">
+                          <label>Purchase Unit Price (Unit Cost)</label>
+                          <input 
+                            type="number" 
+                            step="0.0001"
+                            value={utUnitPrice} 
+                            onChange={(e) => setUtUnitPrice(e.target.value)} 
+                            placeholder="e.g. 36.2758"
+                            className="glass-input"
+                            required
+                          />
+                        </div>
+                        <div className="input-group">
+                          <label>Current Unit Price</label>
+                          <input 
+                            type="number" 
+                            step="0.0001"
+                            value={utCurrentPriceInput} 
+                            onChange={(e) => setUtCurrentPriceInput(e.target.value)} 
+                            placeholder="e.g. 43.4257"
+                            className="glass-input"
+                            required
+                          />
+                        </div>
                       </div>
-                    </div>
+                    </>
                   )}
 
                   {/* Optional Earnings (details) */}
@@ -743,9 +872,9 @@ export default function PortfolioPage() {
                     <span className="input-hint">Used to calculate your historical growth yield.</span>
                   </div>
 
-                  {utInputMode === "units" && parseFloat(utUnits) && parseFloat(utUnitPrice) ? (
+                  {utInputMode === "units" && parseFloat(utUnits) && parseFloat(utCurrentPriceInput) ? (
                     <div className="ai-sync-status-box success" style={{ fontSize: "0.75rem", marginTop: "-4px" }}>
-                      Calculated Current Balance: <strong>{formatLKR(parseFloat(utUnits) * parseFloat(utUnitPrice))}</strong>
+                      Calculated Current Balance: <strong>{formatLKR(parseFloat(utUnits) * parseFloat(utCurrentPriceInput))}</strong>
                     </div>
                   ) : null}
 
@@ -797,12 +926,20 @@ export default function PortfolioPage() {
                               <h5>{item.fund}</h5>
                               <span className="item-tag-details">SEC Regulated Mutual Fund</span>
                             </div>
-                            <button 
-                              className="delete-btn"
-                              onClick={() => handleDeleteItem("uts", item.id)}
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                              <button 
+                                className="edit-btn-inline"
+                                onClick={() => handleStartEditUt(item)}
+                              >
+                                Edit
+                              </button>
+                              <button 
+                                className="delete-btn"
+                                onClick={() => handleDeleteItem("uts", item.id)}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="card-top-info-row" style={{ flexWrap: "wrap", gap: "1rem" }}>
@@ -814,15 +951,19 @@ export default function PortfolioPage() {
                               <span className="lbl">Yield:</span>
                               <span className="val text-white">{item.rate.toFixed(2)}%</span>
                             </div>
-                            {item.units && item.unitPrice && (
+                            {item.units && item.currentPrice && (
                               <>
                                 <div className="info-badge-val">
-                                  <span className="lbl">Units:</span>
+                                  <span className="lbl">Units Held:</span>
                                   <span className="val text-white">{item.units.toLocaleString("en-LK", { maximumFractionDigits: 2 })}</span>
                                 </div>
                                 <div className="info-badge-val">
-                                  <span className="lbl">Unit Price:</span>
-                                  <span className="val text-white">{item.unitPrice.toFixed(4)}</span>
+                                  <span className="lbl">Unit Cost:</span>
+                                  <span className="val text-white">{item.purchasePrice ? item.purchasePrice.toFixed(4) : "—"}</span>
+                                </div>
+                                <div className="info-badge-val">
+                                  <span className="lbl">Current Price:</span>
+                                  <span className="val text-white">{item.currentPrice.toFixed(4)}</span>
                                 </div>
                               </>
                             )}
@@ -903,77 +1044,132 @@ export default function PortfolioPage() {
                       <button 
                         type="button"
                         className={`radio-btn ${trType === "tbill" ? "active" : ""}`}
-                        onClick={() => {
-                          setTrType("tbill");
-                          setTrTenure(364);
-                        }}
+                        onClick={() => { setTrType("tbill"); setTrTenure(364); }}
                       >
                         T-Bill (Discount)
                       </button>
                       <button 
                         type="button"
                         className={`radio-btn ${trType === "tbond" ? "active" : ""}`}
-                        onClick={() => {
-                          setTrType("tbond");
-                          setTrTenure(5);
-                        }}
+                        onClick={() => { setTrType("tbond"); setTrTenure(5); }}
                       >
                         T-Bond (Coupon)
                       </button>
                     </div>
                   </div>
-                  <div className="input-group">
-                    <label>{trType === "tbill" ? "Maturity Face Value (LKR)" : "Invested Capital (LKR)"}</label>
-                    <input 
-                      type="number" 
-                      value={trAmount} 
-                      onChange={(e) => setTrAmount(e.target.value)} 
-                      placeholder="e.g. 1000000"
-                      className="glass-input"
-                      required
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label>Yield Rate (% p.a.)</label>
-                    <input 
-                      type="number" 
-                      step="0.05"
-                      value={trRate} 
-                      onChange={(e) => setTrRate(e.target.value)} 
-                      placeholder="e.g. 10.20"
-                      className="glass-input"
-                      required
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label>Tenure</label>
-                    {trType === "tbill" ? (
-                      <select 
-                        value={trTenure}
-                        onChange={(e) => setTrTenure(parseInt(e.target.value))}
-                        className="glass-input"
-                        style={{ background: "#0d1323" }}
-                      >
-                        <option value={91}>91-Day (3 Months)</option>
-                        <option value={182}>182-Day (6 Months)</option>
-                        <option value={364}>364-Day (1 Year)</option>
-                      </select>
-                    ) : (
-                      <select 
-                        value={trTenure}
-                        onChange={(e) => setTrTenure(parseInt(e.target.value))}
-                        className="glass-input"
-                        style={{ background: "#0d1323" }}
-                      >
-                        <option value={2}>2 Years</option>
-                        <option value={3}>3 Years</option>
-                        <option value={5}>5 Years</option>
-                        <option value={10}>10 Years</option>
-                        <option value={15}>15 Years</option>
-                        <option value={20}>20 Years</option>
-                      </select>
-                    )}
-                  </div>
+
+                  {/* ── T-BILL fields ── */}
+                  {trType === "tbill" && (
+                    <>
+                      <div className="input-group">
+                        <label>Maturity Face Value (LKR)</label>
+                        <input type="number" value={trAmount} onChange={(e) => setTrAmount(e.target.value)}
+                          placeholder="e.g. 1000000" className="glass-input" required />
+                      </div>
+                      <div className="input-group">
+                        <label>Yield Rate (% p.a.)</label>
+                        <input type="number" step="0.05" value={trRate} onChange={(e) => setTrRate(e.target.value)}
+                          placeholder="e.g. 10.20" className="glass-input" required />
+                      </div>
+                      <div className="input-group">
+                        <label>Tenure</label>
+                        <select value={trTenure} onChange={(e) => setTrTenure(parseInt(e.target.value))}
+                          className="glass-input" style={{ background: "#0d1323" }}>
+                          <option value={91}>91-Day (3 Months)</option>
+                          <option value={182}>182-Day (6 Months)</option>
+                          <option value={364}>364-Day (1 Year)</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── T-BOND fields ── */}
+                  {trType === "tbond" && (
+                    <>
+                      <div className="input-row-double">
+                        <div className="input-group">
+                          <label>ISIN (Optional)</label>
+                          <input type="text" value={trIsin} onChange={(e) => setTrIsin(e.target.value)}
+                            placeholder="e.g. LKB00529F152" className="glass-input" />
+                        </div>
+                        <div className="input-group">
+                          <label>Deal Slip No (Optional)</label>
+                          <input type="text" value={trDealSlip} onChange={(e) => setTrDealSlip(e.target.value)}
+                            placeholder="e.g. F94295" className="glass-input" />
+                        </div>
+                      </div>
+
+                      <div className="input-row-double">
+                        <div className="input-group">
+                          <label>Face Value (LKR)</label>
+                          <input type="number" value={trFaceValue} onChange={(e) => setTrFaceValue(e.target.value)}
+                            placeholder="e.g. 1900328" className="glass-input" />
+                        </div>
+                        <div className="input-group">
+                          <label>INV Value / Invested (LKR)</label>
+                          <input type="number" value={trAmount} onChange={(e) => setTrAmount(e.target.value)}
+                            placeholder="e.g. 2000000" className="glass-input" required />
+                        </div>
+                      </div>
+
+                      <div className="input-row-double">
+                        <div className="input-group">
+                          <label>Yield (% p.a.)</label>
+                          <input type="number" step="0.01" value={trRate} onChange={(e) => setTrRate(e.target.value)}
+                            placeholder="e.g. 11.5" className="glass-input" required />
+                        </div>
+                        <div className="input-group">
+                          <label>Coupon Rate (% p.a.)</label>
+                          <input type="number" step="0.01" value={trCouponRate} onChange={(e) => setTrCouponRate(e.target.value)}
+                            placeholder="e.g. 11.75" className="glass-input" />
+                        </div>
+                      </div>
+
+                      <div className="input-group">
+                        <label>Bi-Annual Coupon Value (LKR per payment)</label>
+                        <input type="number" value={trCouponValue} onChange={(e) => setTrCouponValue(e.target.value)}
+                          placeholder="e.g. 111644" className="glass-input" />
+                        <span className="input-hint">Coupon is paid twice a year — enter the per-payment amount.</span>
+                      </div>
+
+                      <div className="input-row-double">
+                        <div className="input-group">
+                          <label>Coupon Month (first payment month)</label>
+                          <select value={trCouponMonth} onChange={(e) => setTrCouponMonth(parseInt(e.target.value))}
+                            className="glass-input" style={{ background: "#0d1323" }}>
+                            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                          </select>
+                          <span className="input-hint">Second payment is 6 months later automatically.</span>
+                        </div>
+                        <div className="input-group">
+                          <label>Maturity Date</label>
+                          <input type="date" value={trMaturityDate} onChange={(e) => setTrMaturityDate(e.target.value)}
+                            className="glass-input" style={{ colorScheme: "dark" }} />
+                        </div>
+                      </div>
+
+                      <div className="input-group">
+                        <label>Tenor</label>
+                        <select value={trTenure} onChange={(e) => setTrTenure(parseInt(e.target.value))}
+                          className="glass-input" style={{ background: "#0d1323" }}>
+                          <option value={2}>2 Years</option>
+                          <option value={3}>3 Years</option>
+                          <option value={5}>5 Years</option>
+                          <option value={10}>10 Years</option>
+                          <option value={15}>15 Years</option>
+                          <option value={20}>20 Years</option>
+                        </select>
+                      </div>
+
+                      {trCouponValue && parseFloat(trCouponValue) > 0 && (
+                        <div className="ai-sync-status-box success" style={{ fontSize: "0.75rem" }}>
+                          Annual Coupon Income: <strong>{formatLKR(parseFloat(trCouponValue) * 2)}</strong>
+                          &nbsp;|&nbsp; Next payments in: <strong>{MONTHS[(trCouponMonth - 1) % 12]}</strong> &amp; <strong>{MONTHS[(trCouponMonth + 5) % 12]}</strong>
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   <button type="submit" className="add-btn treasury-btn">
                     Add Treasury to Portfolio
                   </button>
@@ -996,45 +1192,104 @@ export default function PortfolioPage() {
                   <div className="investments-scroll-grid">
                     {portfolio.treasury.map((item) => {
                       const res = calculateTreasuryReturns(item);
+                      const couponMonth2 = item.couponMonth ? MONTHS[(item.couponMonth + 5) % 12] : null;
+                      const couponMonth1 = item.couponMonth ? MONTHS[(item.couponMonth - 1) % 12] : null;
                       return (
                         <div key={item.id} className="glass-card investment-item-card animate-fade-in">
                           <div className="item-header">
                             <div>
-                              <h5>{item.type === "tbill" ? "Treasury Bill (T-Bill)" : "Treasury Bond (T-Bond)"}</h5>
+                              <h5>
+                                {item.type === "tbill" ? "Treasury Bill (T-Bill)" : "Treasury Bond (T-Bond)"}
+                                {item.isin && <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginLeft: "8px", fontWeight: 400 }}>{item.isin}</span>}
+                              </h5>
                               <span className="item-tag-details">
-                                {item.type === "tbill" ? `${item.tenureDaysOrYears} Days Maturity` : `${item.tenureDaysOrYears} Years maturity`}
+                                {item.type === "tbill"
+                                  ? `${item.tenureDaysOrYears}-Day T-Bill`
+                                  : `${item.tenureDaysOrYears}Y T-Bond${item.maturityDate ? ` · Matures ${new Date(item.maturityDate).toLocaleDateString("en-LK", { year: "numeric", month: "short", day: "numeric" })}` : ""}`}
                               </span>
                             </div>
-                            <button 
-                              className="delete-btn"
-                              onClick={() => handleDeleteItem("treasury", item.id)}
-                            >
+                            <button className="delete-btn" onClick={() => handleDeleteItem("treasury", item.id)}>
                               <Trash2 size={15} />
                             </button>
                           </div>
 
-                          <div className="card-top-info-row">
+                          {/* Metrics row */}
+                          <div className="card-top-info-row" style={{ flexWrap: "wrap", gap: "1rem" }}>
+                            {item.faceValue && (
+                              <div className="info-badge-val">
+                                <span className="lbl">Face Value:</span>
+                                <span className="val text-white">{formatLKR(item.faceValue)}</span>
+                              </div>
+                            )}
                             <div className="info-badge-val">
-                              <span className="lbl">{item.type === "tbill" ? "Face Value:" : "Invested Capital:"}</span>
+                              <span className="lbl">{item.type === "tbill" ? "Face Value:" : "INV Value:"}:</span>
                               <span className="val text-teal">{formatLKR(item.amount)}</span>
                             </div>
                             <div className="info-badge-val">
-                              <span className="lbl">Yield Rate:</span>
+                              <span className="lbl">Yield:</span>
                               <span className="val text-white">{item.rate.toFixed(2)}%</span>
                             </div>
+                            {item.couponRate && (
+                              <div className="info-badge-val">
+                                <span className="lbl">Coupon Rate:</span>
+                                <span className="val text-white">{item.couponRate.toFixed(2)}%</span>
+                              </div>
+                            )}
+                            {item.couponValue && (
+                              <div className="info-badge-val">
+                                <span className="lbl">Per Coupon:</span>
+                                <span className="val text-emerald">{formatLKR(item.couponValue)}</span>
+                              </div>
+                            )}
+                            {item.dealSlip && (
+                              <div className="info-badge-val">
+                                <span className="lbl">Deal Slip:</span>
+                                <span className="val text-white">{item.dealSlip}</span>
+                              </div>
+                            )}
                           </div>
 
+                          {/* Coupon schedule strip for T-Bonds */}
+                          {item.type === "tbond" && item.couponMonth && (
+                            <div className="bond-coupon-strip">
+                              <div className="coupon-strip-label">📅 Bi-Annual Coupon Schedule</div>
+                              <div className="coupon-dates-row">
+                                <div className="coupon-date-pill">
+                                  <span className="cpn-month">{couponMonth1}</span>
+                                  <span className="cpn-val">{item.couponValue ? formatLKR(item.couponValue) : "—"}</span>
+                                </div>
+                                <div style={{ color: "var(--text-muted)", fontSize: "0.7rem", alignSelf: "center" }}>+6 months</div>
+                                <div className="coupon-date-pill">
+                                  <span className="cpn-month">{couponMonth2}</span>
+                                  <span className="cpn-val">{item.couponValue ? formatLKR(item.couponValue) : "—"}</span>
+                                </div>
+                                {res.nextCouponDates[0] && (
+                                  <div className="next-coupon-badge">
+                                    Next: {res.nextCouponDates[0]}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Income table */}
                           <div className="item-mini-table-wrapper">
                             <table className="item-mini-table">
                               <thead>
                                 <tr>
                                   <th>Period</th>
-                                  <th>Gross Income</th>
-                                  <th>Net (After WHT)</th>
+                                  <th>Gross Coupon</th>
+                                  <th>Net (After 10% WHT)</th>
                                   <th>Net (After 36% IIT)</th>
                                 </tr>
                               </thead>
                               <tbody>
+                                <tr>
+                                  <td className="period-col">Per Coupon</td>
+                                  <td>{item.couponValue ? formatLKR(item.couponValue) : "—"}</td>
+                                  <td className="text-emerald">{item.couponValue ? formatLKR(item.couponValue * 0.9) : "—"}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{item.couponValue ? formatLKR(item.couponValue * 0.64) : "—"}</td>
+                                </tr>
                                 <tr>
                                   <td className="period-col">Monthly</td>
                                   <td>{formatLKR(res.annualGross / 12)}</td>
@@ -1060,6 +1315,134 @@ export default function PortfolioPage() {
           )}
         </div>
       </div>
+
+      {/* Edit Unit Trust Modal */}
+      {editingUt && (
+        <div className="ai-modal-backdrop" onClick={() => setEditingUt(null)}>
+          <div className="glass-card ai-modal-card animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <div className="ai-modal-header">
+              <Compass size={20} style={{ color: "var(--color-emerald)" }} />
+              <h3>Edit Unit Trust Holding</h3>
+            </div>
+            
+            <form onSubmit={handleSaveEditUt} className="form-inputs-group" style={{ marginTop: "1rem" }}>
+              <div className="input-group">
+                <label>Fund Manager & Scheme</label>
+                <input
+                  type="text"
+                  value={editUtFund}
+                  onChange={(e) => setEditUtFund(e.target.value)}
+                  className="glass-input"
+                  required
+                />
+              </div>
+
+              {editingUt.units && editingUt.currentPrice ? (
+                <>
+                  <div className="input-row-double">
+                    <div className="input-group">
+                      <label>Units Held</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editUtUnits}
+                        onChange={(e) => setEditUtUnits(e.target.value)}
+                        className="glass-input"
+                        required
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>Yield Rate (% p.a.)</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        value={editUtRate}
+                        onChange={(e) => setEditUtRate(e.target.value)}
+                        className="glass-input"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="input-row-double">
+                    <div className="input-group">
+                      <label>Purchase Unit Price (Unit Cost)</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={editUtCost}
+                        onChange={(e) => setEditUtCost(e.target.value)}
+                        className="glass-input"
+                        required
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>Current Unit Price</label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={editUtCurrentPrice}
+                        onChange={(e) => setEditUtCurrentPrice(e.target.value)}
+                        className="glass-input"
+                        required
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="input-row-double">
+                  <div className="input-group">
+                    <label>Capital Invested (LKR)</label>
+                    <input
+                      type="number"
+                      value={editUtUnits}
+                      onChange={(e) => setEditUtUnits(e.target.value)}
+                      className="glass-input"
+                      required
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Yield Rate (% p.a.)</label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      value={editUtRate}
+                      onChange={(e) => setEditUtRate(e.target.value)}
+                      className="glass-input"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Live Preview Calcs */}
+              {editingUt.units && parseFloat(editUtUnits) && parseFloat(editUtCurrentPrice) && parseFloat(editUtCost) ? (
+                <div className="ai-sync-status-box success" style={{ fontSize: "0.75rem", marginTop: "-4px" }}>
+                  Projected Current Balance: <strong>{formatLKR(parseFloat(editUtUnits) * parseFloat(editUtCurrentPrice))}</strong><br/>
+                  Projected Gain: <strong>{formatLKR((parseFloat(editUtUnits) * parseFloat(editUtCurrentPrice)) - (parseFloat(editUtUnits) * parseFloat(editUtCost)))}</strong>
+                </div>
+              ) : null}
+
+              <div className="ai-modal-actions">
+                <button 
+                  type="button" 
+                  className="ai-cancel-btn" 
+                  onClick={() => setEditingUt(null)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="ai-submit-btn"
+                  style={{ background: "linear-gradient(135deg, var(--color-emerald) 0%, var(--color-teal) 100%)" }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .portfolio-overview-card {
@@ -1719,6 +2102,175 @@ export default function PortfolioPage() {
           animation: pulseGlow 1.5s infinite;
           font-size: 1.2rem;
           line-height: 1;
+        }
+
+        /* Inline Edit Button */
+        .edit-btn-inline {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--border-color);
+          color: var(--text-secondary);
+          padding: 2px 8px;
+          border-radius: 4px;
+          font-size: 0.7rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .edit-btn-inline:hover {
+          background: rgba(0, 242, 254, 0.08);
+          border-color: rgba(0, 242, 254, 0.3);
+          color: var(--color-teal);
+        }
+
+        /* Modal Backdrop and Styling */
+        .ai-modal-backdrop {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.75);
+          backdrop-filter: blur(8px);
+          z-index: 100;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1.5rem;
+        }
+
+        .ai-modal-card {
+          max-width: 480px;
+          width: 100%;
+          border-color: rgba(0, 242, 254, 0.2);
+          box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 242, 254, 0.05);
+          animation: fadeIn 0.3s ease;
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+          background: #090e1a;
+          padding: 1.5rem;
+        }
+
+        .ai-modal-header {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .ai-modal-header h3 {
+          font-family: var(--font-display);
+          font-size: 1.25rem;
+          font-weight: 700;
+          margin: 0;
+        }
+
+        .ai-modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 12px;
+          margin-top: 0.5rem;
+        }
+
+        .ai-cancel-btn {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--border-color);
+          color: var(--text-primary);
+          padding: 0.6rem 1.2rem;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .ai-cancel-btn:hover {
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        .ai-submit-btn {
+          border: none;
+          color: #04060c;
+          padding: 0.6rem 1.2rem;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          box-shadow: 0 4px 10px rgba(0, 242, 254, 0.2);
+        }
+
+        .ai-submit-btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 15px rgba(0, 242, 254, 0.3);
+        }
+
+        /* T-Bond Coupon Schedule Strip */
+        .bond-coupon-strip {
+          background: rgba(99, 102, 241, 0.04);
+          border: 1px solid rgba(99, 102, 241, 0.15);
+          border-radius: 8px;
+          padding: 10px 14px;
+          margin-bottom: 0.75rem;
+        }
+
+        .coupon-strip-label {
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          margin-bottom: 8px;
+        }
+
+        .coupon-dates-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .coupon-date-pill {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          border-radius: 8px;
+          padding: 6px 14px;
+          gap: 2px;
+          min-width: 90px;
+        }
+
+        .cpn-month {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: var(--color-indigo);
+        }
+
+        .cpn-val {
+          font-size: 0.8rem;
+          font-weight: 700;
+          font-family: var(--font-display);
+          color: var(--text-primary);
+        }
+
+        .next-coupon-badge {
+          margin-left: auto;
+          background: rgba(16, 185, 129, 0.08);
+          border: 1px solid rgba(16, 185, 129, 0.2);
+          border-radius: 20px;
+          padding: 4px 12px;
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: var(--color-emerald);
+        }
+
+        .input-hint {
+          font-size: 0.7rem;
+          color: var(--text-muted);
+          margin-top: 3px;
+          display: block;
         }
       `}</style>
     </div>
