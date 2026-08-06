@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRates } from "@/context/RatesContext";
-import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart } from "lucide-react";
+import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe } from "lucide-react";
 
 interface FdInvestment {
   id: string;
@@ -47,24 +47,35 @@ interface DividendInvestment {
   yearlyDividend: number;    // Estimated yearly dividend (LKR) — tax-free
 }
 
+interface PfcaFdInvestment {
+  id: string;
+  institution: string;
+  amount: number;            // Investment amount (USD)
+  rate: number;              // Interest rate (% p.a.)
+  maturityType: "monthly" | "quarterly" | "maturity";
+  exchangeRate: number;      // LKR per USD — for portfolio LKR totals
+}
+
 interface PortfolioState {
   fds: FdInvestment[];
   uts: UtInvestment[];
   treasury: TreasuryInvestment[];
   dividends: DividendInvestment[];
+  pfcaFds: PfcaFdInvestment[];
 }
 
 const INITIAL_STATE: PortfolioState = {
   fds: [],
   uts: [],
   treasury: [],
-  dividends: []
+  dividends: [],
+  pfcaFds: []
 };
 
 export default function PortfolioPage() {
   const { rates } = useRates();
   const [portfolio, setPortfolio] = useState<PortfolioState>(INITIAL_STATE);
-  const [activeTab, setActiveTab] = useState<"fds" | "uts" | "treasury" | "dividends">("fds");
+  const [activeTab, setActiveTab] = useState<"fds" | "uts" | "treasury" | "dividends" | "pfcaFds">("fds");
   const [incomePeriod, setIncomePeriod] = useState<"monthly" | "annual">("monthly");
 
   // Input states for FD Form
@@ -111,6 +122,13 @@ export default function PortfolioPage() {
   const [divAmount, setDivAmount] = useState<string>("");
   const [divYearly, setDivYearly] = useState<string>("");
 
+  // Input states for PFCA FD Form
+  const [pfcaInst, setPfcaInst] = useState<string>("Commercial Bank of Ceylon");
+  const [pfcaAmount, setPfcaAmount] = useState<string>("");
+  const [pfcaRate, setPfcaRate] = useState<string>("");
+  const [pfcaMaturity, setPfcaMaturity] = useState<"monthly" | "quarterly" | "maturity">("maturity");
+  const [pfcaFx, setPfcaFx] = useState<string>("310");
+
   // Load from local storage
   useEffect(() => {
     const saved = localStorage.getItem("lankawealth_portfolio");
@@ -122,6 +140,7 @@ export default function PortfolioPage() {
           uts: parsed.uts || [],
           treasury: parsed.treasury || [],
           dividends: parsed.dividends || [],
+          pfcaFds: parsed.pfcaFds || [],
         });
       } catch (e) {
         console.error("Failed to parse portfolio", e);
@@ -322,7 +341,32 @@ export default function PortfolioPage() {
     setDivYearly("");
   };
 
-  const handleDeleteItem = (category: "fds" | "uts" | "treasury" | "dividends", id: string) => {
+  const handleAddPfcaFd = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amountNum = parseFloat(pfcaAmount);
+    const rateNum = parseFloat(pfcaRate);
+    const fxNum = parseFloat(pfcaFx) || 310;
+    if (!pfcaInst.trim() || !amountNum || !rateNum) return;
+
+    const newItem: PfcaFdInvestment = {
+      id: Date.now().toString(),
+      institution: pfcaInst.trim(),
+      amount: amountNum,
+      rate: rateNum,
+      maturityType: pfcaMaturity,
+      exchangeRate: fxNum,
+    };
+
+    const updated = {
+      ...portfolio,
+      pfcaFds: [...(portfolio.pfcaFds || []), newItem],
+    };
+    savePortfolio(updated);
+    setPfcaAmount("");
+    setPfcaRate("");
+  };
+
+  const handleDeleteItem = (category: "fds" | "uts" | "treasury" | "dividends" | "pfcaFds", id: string) => {
     const updated = {
       ...portfolio,
       [category]: portfolio[category].filter((item) => item.id !== id)
@@ -394,6 +438,31 @@ export default function PortfolioPage() {
     return { annualGross, wht: 0, netWht: annualGross, iit36: 0, netIit: annualGross };
   };
 
+  // PFCA FDs are tax-free; interest in USD, LKR equivalent via exchange rate
+  const calculatePfcaReturns = (item: PfcaFdInvestment) => {
+    const annualInterestUsd = item.amount * (item.rate / 100);
+    const fx = item.exchangeRate || 310;
+    const investedLkr = item.amount * fx;
+    const annualGross = annualInterestUsd * fx; // LKR for portfolio totals
+    return {
+      annualInterestUsd,
+      investedLkr,
+      annualGross,
+      wht: 0,
+      netWht: annualGross,
+      iit36: 0,
+      netIit: annualGross,
+    };
+  };
+
+  const formatUSD = (num: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(num);
+  };
+
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   // Totals for summary panel
@@ -437,11 +506,32 @@ export default function PortfolioPage() {
     return acc;
   }, { invested: 0, gross: 0, netWht: 0, whtDeducted: 0, netIit: 0 });
 
-  const grandTotalInvested = fdTotals.invested + utTotals.invested + treasuryTotals.invested + dividendTotals.invested;
-  const grandTotalGross = fdTotals.gross + utTotals.gross + treasuryTotals.gross + dividendTotals.gross;
-  const grandTotalNetWht = fdTotals.netWht + utTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht;
-  const grandTotalWht = fdTotals.whtDeducted + utTotals.whtDeducted + treasuryTotals.whtDeducted + dividendTotals.whtDeducted;
-  const grandTotalNetIit = fdTotals.netIit + utTotals.netIit + treasuryTotals.netIit + dividendTotals.netIit;
+  const pfcaTotals = (portfolio.pfcaFds || []).reduce((acc, item) => {
+    const res = calculatePfcaReturns(item);
+    acc.invested += res.investedLkr;
+    acc.investedUsd += item.amount;
+    acc.gross += res.annualGross;
+    acc.grossUsd += res.annualInterestUsd;
+    acc.netWht += res.netWht;
+    acc.whtDeducted += res.wht;
+    acc.netIit += res.netIit;
+    return acc;
+  }, { invested: 0, investedUsd: 0, gross: 0, grossUsd: 0, netWht: 0, whtDeducted: 0, netIit: 0 });
+
+  const grandTotalInvested = fdTotals.invested + utTotals.invested + treasuryTotals.invested + dividendTotals.invested + pfcaTotals.invested;
+  const grandTotalGross = fdTotals.gross + utTotals.gross + treasuryTotals.gross + dividendTotals.gross + pfcaTotals.gross;
+  const grandTotalNetWht = fdTotals.netWht + utTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht + pfcaTotals.netWht;
+  const grandTotalWht = fdTotals.whtDeducted + utTotals.whtDeducted + treasuryTotals.whtDeducted + dividendTotals.whtDeducted + pfcaTotals.whtDeducted;
+  const grandTotalNetIit = fdTotals.netIit + utTotals.netIit + treasuryTotals.netIit + dividendTotals.netIit + pfcaTotals.netIit;
+
+  // Split yields: core (FD/UT/Treasury) vs tax-free (Dividend/PFCA)
+  const coreInvested = fdTotals.invested + utTotals.invested + treasuryTotals.invested;
+  const coreGross = fdTotals.gross + utTotals.gross + treasuryTotals.gross;
+  const coreYield = coreInvested > 0 ? (coreGross / coreInvested) * 100 : 0;
+
+  const taxFreeInvested = dividendTotals.invested + pfcaTotals.invested;
+  const taxFreeGross = dividendTotals.gross + pfcaTotals.gross;
+  const taxFreeYield = taxFreeInvested > 0 ? (taxFreeGross / taxFreeInvested) * 100 : 0;
 
   // Preset rates autocomplete when forms load
   useEffect(() => {
@@ -451,6 +541,8 @@ export default function PortfolioPage() {
       setUtRate(rates.unitTrust.moneyMarketYield.toString());
     } else if (activeTab === "treasury" && rates?.treasury?.tb12m) {
       setTrRate(rates.treasury.tb12m.toString());
+    } else if (activeTab === "pfcaFds" && rates?.pfcaFd?.usdYield12m) {
+      setPfcaRate(rates.pfcaFd.usdYield12m.toString());
     }
   }, [activeTab, rates]);
 
@@ -473,12 +565,25 @@ export default function PortfolioPage() {
               <span className="summary-val text-teal" style={{ fontSize: "1.7rem", marginTop: "4px" }}>
                 {formatLKR(grandTotalInvested)}
               </span>
-              {grandTotalInvested > 0 && (
-                <span className="badge badge-teal" style={{ fontSize: "0.75rem", padding: "2px 6px" }}>
-                  {((grandTotalGross / grandTotalInvested) * 100).toFixed(2)}% Weighted Yield
-                </span>
-              )}
             </div>
+            {(coreInvested > 0 || taxFreeInvested > 0) && (
+              <div className="split-yield-row">
+                {coreInvested > 0 && (
+                  <div className="split-yield-badge core">
+                    <span className="split-yield-lbl">FD + UT + Treasury</span>
+                    <span className="split-yield-val">{coreYield.toFixed(2)}%</span>
+                    <span className="split-yield-cap">{formatLKR(coreInvested)}</span>
+                  </div>
+                )}
+                {taxFreeInvested > 0 && (
+                  <div className="split-yield-badge taxfree">
+                    <span className="split-yield-lbl">Dividend + PFCA</span>
+                    <span className="split-yield-val">{taxFreeYield.toFixed(2)}%</span>
+                    <span className="split-yield-cap">{formatLKR(taxFreeInvested)}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="income-period-tabs">
@@ -676,6 +781,43 @@ export default function PortfolioPage() {
             </div>
           </div>
         </div>
+
+        {/* PFCA FD Totals Card */}
+        <div className="glass-card category-total-card animate-fade-in">
+          <div className="card-header">
+            <div className="title-box">
+              <Globe size={18} className="icon-pfca" />
+              <h5>PFCA Fixed Deposits</h5>
+            </div>
+            <span className="badge" style={{ background: "rgba(244, 63, 94, 0.12)", color: "#f43f5e", border: "1px solid rgba(244,63,94,0.2)" }}>Tax-Free</span>
+          </div>
+          <div className="total-capital-row">
+            <span className="lbl">Total Invested:</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+              <span className="val" style={{ color: "#f43f5e" }}>{formatLKR(pfcaTotals.invested)}</span>
+              {pfcaTotals.investedUsd > 0 && (
+                <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: "600", marginTop: "2px" }}>
+                  {formatUSD(pfcaTotals.investedUsd)} • Avg. {pfcaTotals.invested > 0 ? ((pfcaTotals.gross / pfcaTotals.invested) * 100).toFixed(2) : "0.00"}% p.a.
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="divider-h" style={{ margin: "8px 0" }} />
+          <div className="category-metrics-list">
+            <div className="metric-item">
+              <span>Est. {incomePeriod === "monthly" ? "Monthly" : "Yearly"} Interest:</span>
+              <span className="val-text" style={{ color: "#f43f5e" }}>{formatLKR(incomePeriod === "monthly" ? pfcaTotals.gross / 12 : pfcaTotals.gross)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Interest (USD):</span>
+              <span className="val-text text-emerald">{formatUSD(incomePeriod === "monthly" ? pfcaTotals.grossUsd / 12 : pfcaTotals.grossUsd)}</span>
+            </div>
+            <div className="metric-item">
+              <span>Tax Deduction:</span>
+              <span className="val-text text-emerald">None (Tax-Free)</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Tabs Container */}
@@ -708,6 +850,13 @@ export default function PortfolioPage() {
           >
             <LineChart size={16} className="tab-icon" />
             Dividends ({(portfolio.dividends || []).length})
+          </button>
+          <button 
+            className={`tab-link ${activeTab === "pfcaFds" ? "active" : ""}`}
+            onClick={() => setActiveTab("pfcaFds")}
+          >
+            <Globe size={16} className="tab-icon" />
+            PFCA FD ({(portfolio.pfcaFds || []).length})
           </button>
         </div>
 
@@ -1533,6 +1682,167 @@ export default function PortfolioPage() {
               </div>
             </div>
           )}
+
+          {/* PFCA FD TAB */}
+          {activeTab === "pfcaFds" && (
+            <div className="tab-layout-grid">
+              <div className="glass-card form-card">
+                <h4><Plus size={18} style={{ color: "#f43f5e", marginRight: "6px" }} /> Add PFCA Fixed Deposit</h4>
+                <form onSubmit={handleAddPfcaFd} className="form-inputs-group">
+                  <div className="input-group">
+                    <label>Institution / Bank</label>
+                    <input
+                      type="text"
+                      value={pfcaInst}
+                      onChange={(e) => setPfcaInst(e.target.value)}
+                      placeholder="e.g. Commercial Bank of Ceylon"
+                      className="glass-input"
+                      required
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Investment Amount (USD)</label>
+                    <input
+                      type="number"
+                      value={pfcaAmount}
+                      onChange={(e) => setPfcaAmount(e.target.value)}
+                      placeholder="e.g. 10000"
+                      className="glass-input"
+                      required
+                      min="1"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label>Interest Rate (% p.a.)</label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      value={pfcaRate}
+                      onChange={(e) => setPfcaRate(e.target.value)}
+                      placeholder="e.g. 4.25"
+                      className="glass-input"
+                      required
+                      min="0"
+                    />
+                  </div>
+                  <div className="input-row-double">
+                    <div className="input-group">
+                      <label>Maturity Type</label>
+                      <select
+                        value={pfcaMaturity}
+                        onChange={(e) => setPfcaMaturity(e.target.value as "monthly" | "quarterly" | "maturity")}
+                        className="glass-input"
+                        style={{ background: "#0d1323" }}
+                      >
+                        <option value="maturity">At Maturity</option>
+                        <option value="monthly">Monthly Interest</option>
+                        <option value="quarterly">Quarterly Interest</option>
+                      </select>
+                    </div>
+                    <div className="input-group">
+                      <label>USD/LKR Rate</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        value={pfcaFx}
+                        onChange={(e) => setPfcaFx(e.target.value)}
+                        placeholder="310"
+                        className="glass-input"
+                        required
+                        min="1"
+                      />
+                    </div>
+                  </div>
+                  <div className="div-tax-note">
+                    <ShieldCheck size={16} style={{ color: "var(--color-emerald)", flexShrink: 0 }} />
+                    <span>PFCA interest is tax-free — no WHT or IIT applied.</span>
+                  </div>
+                  <button type="submit" className="add-btn pfca-btn">
+                    Add PFCA FD to Portfolio
+                  </button>
+                </form>
+              </div>
+
+              <div className="items-list-box">
+                <div className="category-summary-strip">
+                  <span>Total PFCA FDs: <strong>{(portfolio.pfcaFds || []).length}</strong></span>
+                  <span>Invested: <strong>{formatUSD(pfcaTotals.investedUsd)}</strong></span>
+                </div>
+
+                {(portfolio.pfcaFds || []).length === 0 ? (
+                  <div className="empty-portfolio-state glass-card">
+                    <Globe size={36} className="empty-icon" />
+                    <p>No PFCA Fixed Deposits added yet.</p>
+                  </div>
+                ) : (
+                  <div className="investments-scroll-grid">
+                    {(portfolio.pfcaFds || []).map((item) => {
+                      const res = calculatePfcaReturns(item);
+                      const maturityLabel =
+                        item.maturityType === "monthly" ? "Monthly Interest"
+                        : item.maturityType === "quarterly" ? "Quarterly Interest"
+                        : "At Maturity";
+                      const periodInterestUsd =
+                        item.maturityType === "monthly" ? res.annualInterestUsd / 12
+                        : item.maturityType === "quarterly" ? res.annualInterestUsd / 4
+                        : res.annualInterestUsd;
+                      return (
+                        <div key={item.id} className="glass-card investment-item-card pfca-item-card animate-fade-in">
+                          <div className="item-header">
+                            <div>
+                              <h5>{item.institution}</h5>
+                              <span className="item-tag-details">PFCA FD • {maturityLabel} • Tax-Free</span>
+                            </div>
+                            <button
+                              className="delete-btn"
+                              onClick={() => handleDeleteItem("pfcaFds", item.id)}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+
+                          <div className="card-top-info-row">
+                            <div className="info-badge-val">
+                              <span className="lbl">Investment:</span>
+                              <span className="val" style={{ color: "#f43f5e" }}>{formatUSD(item.amount)}</span>
+                            </div>
+                            <div className="info-badge-val">
+                              <span className="lbl">Interest Rate:</span>
+                              <span className="val text-white">{item.rate.toFixed(2)}%</span>
+                            </div>
+                          </div>
+
+                          <div className="pfca-income-block">
+                            <div className="div-income-row">
+                              <span className="div-income-lbl">Yearly Interest</span>
+                              <span className="pfca-income-val">{formatUSD(res.annualInterestUsd)}</span>
+                            </div>
+                            <div className="div-income-row">
+                              <span className="div-income-lbl">
+                                {item.maturityType === "monthly" ? "Monthly Interest"
+                                  : item.maturityType === "quarterly" ? "Quarterly Interest"
+                                  : "Interest at Maturity (1Y)"}
+                              </span>
+                              <span className="pfca-income-val text-emerald">{formatUSD(periodInterestUsd)}</span>
+                            </div>
+                            <div className="div-income-row">
+                              <span className="div-income-lbl">LKR Equivalent (Yearly)</span>
+                              <span className="pfca-income-val" style={{ color: "#fb7185" }}>{formatLKR(res.annualGross)}</span>
+                            </div>
+                            <div className="div-tax-free-note">
+                              <ShieldCheck size={13} />
+                              Tax-free — @ {item.exchangeRate.toFixed(2)} LKR/USD
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1686,6 +1996,61 @@ export default function PortfolioPage() {
           gap: 4px;
         }
 
+        .split-yield-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 10px;
+        }
+
+        .split-yield-badge {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 10px;
+          border-radius: 8px;
+          border: 1px solid;
+          font-size: 0.72rem;
+        }
+
+        .split-yield-badge.core {
+          background: rgba(0, 242, 254, 0.06);
+          border-color: rgba(0, 242, 254, 0.2);
+        }
+
+        .split-yield-badge.taxfree {
+          background: rgba(99, 102, 241, 0.08);
+          border-color: rgba(99, 102, 241, 0.22);
+        }
+
+        .split-yield-lbl {
+          font-weight: 600;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+
+        .split-yield-val {
+          font-family: var(--font-display);
+          font-weight: 800;
+          font-size: 0.9rem;
+        }
+
+        .split-yield-badge.core .split-yield-val {
+          color: var(--color-teal);
+        }
+
+        .split-yield-badge.taxfree .split-yield-val {
+          color: #818cf8;
+        }
+
+        .split-yield-cap {
+          color: var(--text-secondary);
+          font-weight: 600;
+          padding-left: 6px;
+          border-left: 1px solid var(--border-color);
+        }
+
         .income-period-tabs {
           display: flex;
           background: rgba(255,255,255,0.02);
@@ -1770,12 +2135,14 @@ export default function PortfolioPage() {
 
         .tabs-header-row {
           display: flex;
+          flex-wrap: wrap;
           background: rgba(255,255,255,0.02);
           border: 1px solid var(--border-color);
           padding: 4px;
           border-radius: 12px;
           gap: 4px;
           width: fit-content;
+          max-width: 100%;
         }
 
         @media (max-width: 600px) {
@@ -1896,6 +2263,10 @@ export default function PortfolioPage() {
         }
         .dividends-btn {
           background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
+          color: #ffffff;
+        }
+        .pfca-btn {
+          background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%);
           color: #ffffff;
         }
 
@@ -2156,15 +2527,9 @@ export default function PortfolioPage() {
 
         .category-totals-row {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 1.5rem;
           margin-bottom: 2rem;
-        }
-
-        @media (max-width: 1100px) {
-          .category-totals-row {
-            grid-template-columns: repeat(2, 1fr);
-          }
         }
 
         @media (max-width: 640px) {
@@ -2209,9 +2574,14 @@ export default function PortfolioPage() {
         .icon-ut { color: var(--color-emerald); }
         .icon-tr { color: var(--color-indigo); }
         .icon-div { color: #6366f1; }
+        .icon-pfca { color: #f43f5e; }
 
         .dividend-item-card {
           border-color: rgba(99, 102, 241, 0.18);
+        }
+
+        .pfca-item-card {
+          border-color: rgba(244, 63, 94, 0.2);
         }
 
         .dividend-income-block {
@@ -2219,6 +2589,17 @@ export default function PortfolioPage() {
           padding: 0.85rem 1rem;
           background: rgba(99, 102, 241, 0.06);
           border: 1px solid rgba(99, 102, 241, 0.15);
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .pfca-income-block {
+          margin-top: 0.75rem;
+          padding: 0.85rem 1rem;
+          background: rgba(244, 63, 94, 0.06);
+          border: 1px solid rgba(244, 63, 94, 0.18);
           border-radius: 8px;
           display: flex;
           flex-direction: column;
@@ -2245,6 +2626,13 @@ export default function PortfolioPage() {
           color: #818cf8;
         }
 
+        .pfca-income-val {
+          font-family: var(--font-display);
+          font-size: 1.05rem;
+          font-weight: 800;
+          color: #fb7185;
+        }
+
         .div-tax-free-note {
           display: flex;
           align-items: center;
@@ -2254,6 +2642,10 @@ export default function PortfolioPage() {
           color: var(--color-emerald);
           padding-top: 4px;
           border-top: 1px dashed rgba(99, 102, 241, 0.2);
+        }
+
+        .pfca-income-block .div-tax-free-note {
+          border-top-color: rgba(244, 63, 94, 0.25);
         }
 
         .div-tax-note {

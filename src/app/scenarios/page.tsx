@@ -11,16 +11,18 @@ interface FdItem { id: string; institution: string; amount: number; rate: number
 interface UtItem { id: string; fund: string; amount: number; rate: number; }
 interface TrItem { id: string; type: string; amount: number; rate: number; tenureDaysOrYears: number; couponValue?: number; }
 interface DivItem { id: string; company: string; amount: number; yearlyDividend: number; }
-interface PortfolioState { fds: FdItem[]; uts: UtItem[]; treasury: TrItem[]; dividends?: DivItem[]; }
+interface PfcaItem { id: string; institution: string; amount: number; rate: number; maturityType: "monthly" | "quarterly" | "maturity"; exchangeRate: number; }
+interface PortfolioState { fds: FdItem[]; uts: UtItem[]; treasury: TrItem[]; dividends?: DivItem[]; pfcaFds?: PfcaItem[]; }
 
 interface ScenarioItem {
   id: string;
-  category: "fd" | "ut" | "treasury" | "dividend";
+  category: "fd" | "ut" | "treasury" | "dividend" | "pfca";
   label: string;
   amount: number;
   rate: number;
   couponValue?: number;
   yearlyDividend?: number;
+  maturityType?: "monthly" | "quarterly" | "maturity";
   isFiof?: boolean;
 }
 
@@ -40,10 +42,10 @@ function calcGross(item: ScenarioItem): number {
 
 function calcReturns(item: ScenarioItem) {
   const gross = calcGross(item);
-  // Dividends and unit trusts: no WHT. Dividends: no IIT either.
-  const wht = (item.category === "ut" || item.category === "dividend") ? 0 : gross * 0.10;
+  const taxFree = item.category === "ut" || item.category === "dividend" || item.category === "pfca";
+  const wht = taxFree ? 0 : gross * 0.10;
   const netWht = gross - wht;
-  const iit = item.category === "dividend" ? 0
+  const iit = (item.category === "dividend" || item.category === "pfca") ? 0
     : (item.category === "ut" && !item.isFiof) ? 0
     : gross * 0.36;
   const netIit = gross - iit;
@@ -69,13 +71,37 @@ function portfolioToItems(p: PortfolioState): ScenarioItem[] {
       amount: d.amount, rate, yearlyDividend: d.yearlyDividend
     });
   });
+  (p.pfcaFds || []).forEach(pf => {
+    const fx = pf.exchangeRate || 310;
+    items.push({
+      id: pf.id, category: "pfca", label: pf.institution,
+      amount: pf.amount * fx, rate: pf.rate, maturityType: pf.maturityType
+    });
+  });
   return items;
 }
 
 function calcTotals(items: ScenarioItem[]) {
   let invested = 0, gross = 0, netWht = 0, netIit = 0;
-  items.forEach(it => { const r = calcReturns(it); invested += it.amount; gross += r.gross; netWht += r.netWht; netIit += r.netIit; });
-  return { invested, gross, netWht, netIit };
+  let coreInvested = 0, coreGross = 0;
+  let taxFreeInvested = 0, taxFreeGross = 0;
+  items.forEach(it => {
+    const r = calcReturns(it);
+    invested += it.amount;
+    gross += r.gross;
+    netWht += r.netWht;
+    netIit += r.netIit;
+    if (it.category === "dividend" || it.category === "pfca") {
+      taxFreeInvested += it.amount;
+      taxFreeGross += r.gross;
+    } else {
+      coreInvested += it.amount;
+      coreGross += r.gross;
+    }
+  });
+  const coreYield = coreInvested > 0 ? (coreGross / coreInvested) * 100 : 0;
+  const taxFreeYield = taxFreeInvested > 0 ? (taxFreeGross / taxFreeInvested) * 100 : 0;
+  return { invested, gross, netWht, netIit, coreInvested, coreGross, coreYield, taxFreeInvested, taxFreeGross, taxFreeYield };
 }
 
 const SC_COLORS = ["#00f2fe","#10b981","#a78bfa","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"];
@@ -85,9 +111,10 @@ const catCol = (c: string) =>
   c === "fd" ? "var(--color-teal)"
   : c === "ut" ? "var(--color-emerald)"
   : c === "dividend" ? "#6366f1"
+  : c === "pfca" ? "#f43f5e"
   : "var(--color-indigo)";
 const catLabel = (c: string) =>
-  c === "dividend" ? "DIV" : c.toUpperCase();
+  c === "dividend" ? "DIV" : c === "pfca" ? "PFCA" : c.toUpperCase();
 
 export default function ScenariosPage() {
   const [baseline, setBaseline] = useState<ScenarioItem[]>([]);
@@ -96,12 +123,14 @@ export default function ScenariosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [showCmp, setShowCmp] = useState(true);
-  const [addCat, setAddCat] = useState<Record<string,"fd"|"ut"|"treasury"|"dividend">>({});
+  const [addCat, setAddCat] = useState<Record<string,"fd"|"ut"|"treasury"|"dividend"|"pfca">>({});
   const [addLabel, setAddLabel] = useState<Record<string,string>>({});
   const [addAmount, setAddAmount] = useState<Record<string,string>>({});
   const [addRate, setAddRate] = useState<Record<string,string>>({});
   const [addCoupon, setAddCoupon] = useState<Record<string,string>>({});
   const [addYearlyDiv, setAddYearlyDiv] = useState<Record<string,string>>({});
+  const [addMaturity, setAddMaturity] = useState<Record<string,"monthly"|"quarterly"|"maturity">>({});
+  const [addFx, setAddFx] = useState<Record<string,string>>({});
   const [addFiof, setAddFiof] = useState<Record<string,boolean>>({});
 
   useEffect(() => {
@@ -133,26 +162,41 @@ export default function ScenariosPage() {
 
   const handleAdd = (sid: string) => {
     const cat = addCat[sid] || "fd";
-    const amount = parseFloat(addAmount[sid] || "0");
-    if (!amount) return;
+    const amountRaw = parseFloat(addAmount[sid] || "0");
+    if (!amountRaw) return;
 
     let rate = parseFloat(addRate[sid] || "0");
     let yearlyDividend: number | undefined;
+    let amount = amountRaw;
+    let maturityType: "monthly" | "quarterly" | "maturity" | undefined;
 
     if (cat === "dividend") {
       yearlyDividend = parseFloat(addYearlyDiv[sid] || "0");
       if (!yearlyDividend) return;
       rate = amount > 0 ? (yearlyDividend / amount) * 100 : 0;
+    } else if (cat === "pfca") {
+      if (!rate) return;
+      const fx = parseFloat(addFx[sid] || "310") || 310;
+      amount = amountRaw * fx; // USD → LKR for scenario totals
+      maturityType = addMaturity[sid] || "maturity";
     } else if (!rate) {
       return;
     }
 
+    const defaultLabel =
+      cat === "fd" ? "FD"
+      : cat === "ut" ? "UT"
+      : cat === "dividend" ? "Dividend"
+      : cat === "pfca" ? "PFCA FD"
+      : "Treasury";
+
     const ni: ScenarioItem = {
       id: Date.now().toString(), category: cat,
-      label: addLabel[sid] || (cat === "fd" ? "FD" : cat === "ut" ? "UT" : cat === "dividend" ? "Dividend" : "Treasury"),
+      label: addLabel[sid] || defaultLabel,
       amount, rate,
       couponValue: cat === "treasury" && addCoupon[sid] ? parseFloat(addCoupon[sid]) : undefined,
       yearlyDividend: cat === "dividend" ? yearlyDividend : undefined,
+      maturityType: cat === "pfca" ? maturityType : undefined,
       isFiof: cat === "ut" ? (addFiof[sid] || false) : undefined,
     };
     save(scenarios.map(s => s.id === sid ? { ...s, items: [...s.items, ni] } : s));
@@ -161,6 +205,7 @@ export default function ScenariosPage() {
     setAddRate(p => ({ ...p, [sid]: "" }));
     setAddCoupon(p => ({ ...p, [sid]: "" }));
     setAddYearlyDiv(p => ({ ...p, [sid]: "" }));
+    setAddFx(p => ({ ...p, [sid]: "" }));
   };
 
   const div = period === "monthly" ? 12 : 1;
@@ -201,11 +246,29 @@ export default function ScenariosPage() {
             <div className="sc-dot" style={{background:"#64748b",boxShadow:"0 0 10px #64748b55"}} />
             <div>
               <div className="sc-sname">Current Portfolio &mdash; Baseline</div>
-              <div className="sc-ssub">{baseline.length} investments &bull; {baseTot.invested>0?pct((baseTot.gross/baseTot.invested)*100):"0%"} blended yield</div>
+              <div className="sc-ssub">{baseline.length} investments &bull; {fmt(baseTot.invested)} total capital</div>
             </div>
           </div>
           <div className="sc-base-inv">{fmt(baseTot.invested)}<span>Total Invested</span></div>
         </div>
+        {(baseTot.coreInvested > 0 || baseTot.taxFreeInvested > 0) && (
+          <div className="sc-split-yields">
+            {baseTot.coreInvested > 0 && (
+              <div className="sc-sy core">
+                <span className="sc-sy-lbl">FD + UT + Treasury</span>
+                <span className="sc-sy-val">{pct(baseTot.coreYield)}</span>
+                <span className="sc-sy-cap">{fmt(baseTot.coreInvested)}</span>
+              </div>
+            )}
+            {baseTot.taxFreeInvested > 0 && (
+              <div className="sc-sy taxfree">
+                <span className="sc-sy-lbl">Dividend + PFCA</span>
+                <span className="sc-sy-val">{pct(baseTot.taxFreeYield)}</span>
+                <span className="sc-sy-cap">{fmt(baseTot.taxFreeInvested)}</span>
+              </div>
+            )}
+          </div>
+        )}
         <div className="sc-inc-row">
           <div className="sc-inc-col"><span className="sc-clbl">Gross {period==="monthly"?"Monthly":"Annual"}</span><span className="sc-cval">{fmt(baseTot.gross/div)}</span></div>
           <div className="sc-inc-col"><span className="sc-clbl">Net (After WHT)</span><span className="sc-cval sc-em">{fmt(baseTot.netWht/div)}</span></div>
@@ -240,7 +303,6 @@ export default function ScenariosPage() {
           {scenarios.map(s => {
             const tot = calcTotals(s.items);
             const cat = addCat[s.id] || "fd";
-            const blnd = tot.invested > 0 ? (tot.gross / tot.invested) * 100 : 0;
             const diff = tot.netWht - baseTot.netWht;
             return (
               <div key={s.id} className="sc-card glass-card animate-fade-in" style={{borderColor:s.color+"33"}}>
@@ -268,7 +330,18 @@ export default function ScenariosPage() {
                 </div>
                 <div className="sc-srow">
                   <div className="sc-spill"><span className="sc-plbl">Invested</span><span className="sc-pval">{fmt(tot.invested)}</span></div>
-                  <div className="sc-spill"><span className="sc-plbl">Blended Yield</span><span className="sc-pval" style={{color:s.color}}>{pct(blnd)}</span></div>
+                  {tot.coreInvested > 0 && (
+                    <div className="sc-spill">
+                      <span className="sc-plbl">FD+UT+Treasury</span>
+                      <span className="sc-pval" style={{color:"var(--color-teal)"}}>{pct(tot.coreYield)}</span>
+                    </div>
+                  )}
+                  {tot.taxFreeInvested > 0 && (
+                    <div className="sc-spill">
+                      <span className="sc-plbl">Div+PFCA</span>
+                      <span className="sc-pval" style={{color:"#818cf8"}}>{pct(tot.taxFreeYield)}</span>
+                    </div>
+                  )}
                   <div className="sc-spill"><span className="sc-plbl">Gross {period==="monthly"?"Monthly":"Annual"}</span><span className="sc-pval">{fmt(tot.gross/div)}</span></div>
                   <div className="sc-spill"><span className="sc-plbl">Net (WHT)</span><span className="sc-pval sc-em">{fmt(tot.netWht/div)}</span></div>
                   <div className="sc-spill"><span className="sc-plbl">Net (IIT 36%)</span><span className="sc-pval sc-pu">{fmt(tot.netIit/div)}</span></div>
@@ -313,20 +386,21 @@ export default function ScenariosPage() {
                       <div className="sc-frow">
                         <div className="sc-fg">
                           <label>Category</label>
-                          <select value={cat} onChange={e=>setAddCat(p=>({...p,[s.id]:e.target.value as "fd"|"ut"|"treasury"|"dividend"}))} className="glass-input" style={{background:"#0d1323"}}>
+                          <select value={cat} onChange={e=>setAddCat(p=>({...p,[s.id]:e.target.value as "fd"|"ut"|"treasury"|"dividend"|"pfca"}))} className="glass-input" style={{background:"#0d1323"}}>
                             <option value="fd">Fixed Deposit</option>
                             <option value="ut">Unit Trust</option>
                             <option value="treasury">Treasury</option>
                             <option value="dividend">Dividend</option>
+                            <option value="pfca">PFCA FD</option>
                           </select>
                         </div>
                         <div className="sc-fg" style={{flex:2}}>
-                          <label>{cat==="dividend"?"Company":"Label / Name"}</label>
-                          <input className="glass-input" value={addLabel[s.id]||""} onChange={e=>setAddLabel(p=>({...p,[s.id]:e.target.value}))} placeholder={cat==="fd"?"e.g. Sampath FD":cat==="ut"?"e.g. CAL MMF":cat==="dividend"?"e.g. Commercial Bank":"e.g. T-Bond 5Y"} />
+                          <label>{cat==="dividend"?"Company":cat==="pfca"?"Bank / Institution":"Label / Name"}</label>
+                          <input className="glass-input" value={addLabel[s.id]||""} onChange={e=>setAddLabel(p=>({...p,[s.id]:e.target.value}))} placeholder={cat==="fd"?"e.g. Sampath FD":cat==="ut"?"e.g. CAL MMF":cat==="dividend"?"e.g. Commercial Bank":cat==="pfca"?"e.g. HNB PFCA":"e.g. T-Bond 5Y"} />
                         </div>
                         <div className="sc-fg">
-                          <label>{cat==="dividend"?"Investment (LKR)":"Amount (LKR)"}</label>
-                          <input className="glass-input" type="number" value={addAmount[s.id]||""} onChange={e=>setAddAmount(p=>({...p,[s.id]:e.target.value}))} placeholder="1000000" />
+                          <label>{cat==="dividend"?"Investment (LKR)":cat==="pfca"?"Investment (USD)":"Amount (LKR)"}</label>
+                          <input className="glass-input" type="number" value={addAmount[s.id]||""} onChange={e=>setAddAmount(p=>({...p,[s.id]:e.target.value}))} placeholder={cat==="pfca"?"10000":"1000000"} />
                         </div>
                         {cat==="dividend" ? (
                           <div className="sc-fg">
@@ -336,8 +410,24 @@ export default function ScenariosPage() {
                         ) : (
                           <div className="sc-fg">
                             <label>Rate % p.a.</label>
-                            <input className="glass-input" type="number" step="0.05" value={addRate[s.id]||""} onChange={e=>setAddRate(p=>({...p,[s.id]:e.target.value}))} placeholder="11.5" />
+                            <input className="glass-input" type="number" step="0.05" value={addRate[s.id]||""} onChange={e=>setAddRate(p=>({...p,[s.id]:e.target.value}))} placeholder={cat==="pfca"?"4.25":"11.5"} />
                           </div>
+                        )}
+                        {cat==="pfca" && (
+                          <>
+                            <div className="sc-fg">
+                              <label>Maturity Type</label>
+                              <select value={addMaturity[s.id]||"maturity"} onChange={e=>setAddMaturity(p=>({...p,[s.id]:e.target.value as "monthly"|"quarterly"|"maturity"}))} className="glass-input" style={{background:"#0d1323"}}>
+                                <option value="maturity">At Maturity</option>
+                                <option value="monthly">Monthly Interest</option>
+                                <option value="quarterly">Quarterly Interest</option>
+                              </select>
+                            </div>
+                            <div className="sc-fg">
+                              <label>USD/LKR Rate</label>
+                              <input className="glass-input" type="number" step="0.5" value={addFx[s.id]||"310"} onChange={e=>setAddFx(p=>({...p,[s.id]:e.target.value}))} placeholder="310" />
+                            </div>
+                          </>
                         )}
                         {cat==="treasury" && (
                           <div className="sc-fg">
@@ -354,7 +444,7 @@ export default function ScenariosPage() {
                             </div>
                           </div>
                         )}
-                        {cat==="dividend" && (
+                        {(cat==="dividend" || cat==="pfca") && (
                           <div className="sc-fg" style={{justifyContent:"center",paddingTop:"22px"}}>
                             <span style={{fontSize:"0.72rem",fontWeight:700,color:"var(--color-emerald)"}}>Tax-Free</span>
                           </div>
@@ -388,19 +478,20 @@ export default function ScenariosPage() {
               <div className="sc-cmpwrap">
                 <table className="sc-cmptbl">
                   <thead><tr>
-                    <th>Strategy</th><th>Total Invested</th><th>Blended Yield</th>
+                    <th>Strategy</th><th>Total Invested</th>
+                    <th>FD+UT+Treasury</th><th>Div+PFCA</th>
                     <th>Gross {period==="monthly"?"Monthly":"Annual"}</th>
                     <th>Net (After WHT)</th><th>Net (After 36% IIT)</th><th>vs Baseline</th>
                   </tr></thead>
                   <tbody>
                     {allRows.map((row, idx) => {
-                      const blnd = row.totals.invested > 0 ? (row.totals.gross / row.totals.invested) * 100 : 0;
                       const dv = idx === 0 ? null : row.totals.netWht - baseTot.netWht;
                       return (
                         <tr key={idx} style={idx===0?{background:"rgba(255,255,255,0.006)"}:{}}>
                           <td><div style={{display:"flex",alignItems:"center",gap:"8px"}}><div style={{width:"9px",height:"9px",borderRadius:"50%",background:row.color,flexShrink:0}}/><span style={{fontWeight:700,color:row.color}}>{row.name}</span></div></td>
                           <td style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.invested)}</td>
-                          <td style={{color:row.color,fontWeight:700}}>{pct(blnd)}</td>
+                          <td style={{color:"var(--color-teal)",fontWeight:700}}>{row.totals.coreInvested > 0 ? pct(row.totals.coreYield) : "—"}</td>
+                          <td style={{color:"#818cf8",fontWeight:700}}>{row.totals.taxFreeInvested > 0 ? pct(row.totals.taxFreeYield) : "—"}</td>
                           <td style={{fontFamily:"var(--font-display)"}}>{fmt(row.totals.gross/div)}</td>
                           <td className="sc-em" style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.netWht/div)}</td>
                           <td className="sc-pu" style={{fontFamily:"var(--font-display)"}}>{fmt(row.totals.netIit/div)}</td>
@@ -442,6 +533,15 @@ export default function ScenariosPage() {
         .sc-base-hdr{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;margin-bottom:1rem}
         .sc-base-inv{display:flex;flex-direction:column;align-items:flex-end;font-family:var(--font-display);font-size:1.4rem;font-weight:800;color:var(--text-primary)}
         .sc-base-inv span{font-size:.7rem;font-weight:500;color:var(--text-muted);font-family:var(--font-body);margin-top:2px}
+        .sc-split-yields{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1rem}
+        .sc-sy{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;border:1px solid;font-size:.72rem}
+        .sc-sy.core{background:rgba(0,242,254,.06);border-color:rgba(0,242,254,.2)}
+        .sc-sy.taxfree{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.22)}
+        .sc-sy-lbl{font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em}
+        .sc-sy-val{font-family:var(--font-display);font-weight:800;font-size:.9rem}
+        .sc-sy.core .sc-sy-val{color:var(--color-teal)}
+        .sc-sy.taxfree .sc-sy-val{color:#818cf8}
+        .sc-sy-cap{color:var(--text-secondary);font-weight:600;padding-left:6px;border-left:1px solid var(--border-color)}
         .sc-inc-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem}
         .sc-inc-col{display:flex;flex-direction:column;gap:4px}
         .sc-clbl{font-size:.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em}

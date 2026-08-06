@@ -51,11 +51,21 @@ interface DividendInvestment {
   yearlyDividend: number;
 }
 
+interface PfcaFdInvestment {
+  id: string;
+  institution: string;
+  amount: number;
+  rate: number;
+  maturityType: "monthly" | "quarterly" | "maturity";
+  exchangeRate: number;
+}
+
 interface PortfolioState {
   fds: FdInvestment[];
   uts: UtInvestment[];
   treasury: TreasuryInvestment[];
   dividends?: DividendInvestment[];
+  pfcaFds?: PfcaFdInvestment[];
 }
 
 export default function Dashboard() {
@@ -157,7 +167,7 @@ export default function Dashboard() {
 
   // Helper calculations for portfolio totals
   const getPortfolioTotals = () => {
-    if (!portfolio) return { invested: 0, fds: 0, uts: 0, treasury: 0, dividends: 0, gross: 0, netWht: 0, wht: 0, netIit: 0 };
+    if (!portfolio) return { invested: 0, fds: 0, uts: 0, treasury: 0, dividends: 0, pfcaFds: 0, gross: 0, netWht: 0, wht: 0, netIit: 0 };
 
     let fdInvested = 0;
     let fdGross = 0;
@@ -218,11 +228,20 @@ export default function Dashboard() {
       divGross += item.yearlyDividend; // Tax-free
     });
 
-    const grandInvested = fdInvested + utInvested + trInvested + divInvested;
-    const grandGross = fdGross + utGross + trGross + divGross;
-    const grandNetWht = fdNetWht + utNetWht + trNetWht + divGross;
+    let pfcaInvested = 0;
+    let pfcaGross = 0;
+
+    (portfolio.pfcaFds || []).forEach(item => {
+      const fx = item.exchangeRate || 310;
+      pfcaInvested += item.amount * fx;
+      pfcaGross += item.amount * (item.rate / 100) * fx; // Tax-free
+    });
+
+    const grandInvested = fdInvested + utInvested + trInvested + divInvested + pfcaInvested;
+    const grandGross = fdGross + utGross + trGross + divGross + pfcaGross;
+    const grandNetWht = fdNetWht + utNetWht + trNetWht + divGross + pfcaGross;
     const grandWht = fdWht + utWht + trWht;
-    const grandNetIit = fdNetIit + utNetIit + trNetIit + divGross;
+    const grandNetIit = fdNetIit + utNetIit + trNetIit + divGross + pfcaGross;
 
     return {
       invested: grandInvested,
@@ -230,6 +249,7 @@ export default function Dashboard() {
       uts: utInvested,
       treasury: trInvested,
       dividends: divInvested,
+      pfcaFds: pfcaInvested,
       gross: grandGross,
       netWht: grandNetWht,
       wht: grandWht,
@@ -328,6 +348,10 @@ export default function Dashboard() {
                 <span className="col-val" style={{ color: "#6366f1" }}>{formatLKR(totals.dividends)}</span>
               </div>
               <div className="home-portfolio-col">
+                <span className="col-lbl">PFCA FDs (Tax-Free)</span>
+                <span className="col-val" style={{ color: "#f43f5e" }}>{formatLKR(totals.pfcaFds)}</span>
+              </div>
+              <div className="home-portfolio-col">
                 <span className="col-lbl">
                   {incomePeriod === "monthly" ? "Gross Monthly Income" : "Gross Annual Income"}
                 </span>
@@ -379,6 +403,14 @@ export default function Dashboard() {
                   Div ({Math.round((totals.dividends / totals.invested) * 100)}%)
                 </div>
               )}
+              {totals.pfcaFds > 0 && (
+                <div 
+                  className="bar-segment pfca-segment" 
+                  style={{ width: `${(totals.pfcaFds / totals.invested) * 100}%` }}
+                >
+                  PFCA ({Math.round((totals.pfcaFds / totals.invested) * 100)}%)
+                </div>
+              )}
             </div>
 
             {/* Tax brackets display */}
@@ -399,7 +431,7 @@ export default function Dashboard() {
           <div className="glass-card welcome-portfolio-pitch-card">
             <div className="pitch-text-box">
               <h4>Build and Simulate Your Current Portfolio</h4>
-              <p>Add your active Fixed Deposits, Unit Trusts, Treasury Holdings, and Dividend stocks to track cumulative yield generation, visualize asset allocation, and calculate WHT vs. 36% personal tax bracket impacts.</p>
+              <p>Add your active Fixed Deposits, Unit Trusts, Treasury Holdings, Dividends, and PFCA FDs to track cumulative yield generation, visualize asset allocation, and calculate WHT vs. 36% personal tax bracket impacts.</p>
             </div>
             <Link href="/portfolio" className="pitch-portfolio-btn">
               Configure My Portfolio
@@ -742,6 +774,11 @@ export default function Dashboard() {
 
         .div-segment {
           background: #6366f1;
+          color: #ffffff;
+        }
+
+        .pfca-segment {
+          background: #f43f5e;
           color: #ffffff;
         }
 
