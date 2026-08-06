@@ -212,8 +212,14 @@ export default function PortfolioPage() {
     const annualGross = item.amount * (item.rate / 100);
     const wht = 0; // WHT free!
     const netWht = annualGross;
-    const iit36 = 0; // Dividends / capital gains are tax free!
-    const netIit = annualGross;
+    
+    // Check if the fund is FIOF
+    const isFiof = item.fund.toUpperCase().includes("FIOF") || 
+                   item.fund.toLowerCase().includes("first income opportunities");
+    
+    const iit36 = isFiof ? annualGross * 0.36 : 0;
+    const netIit = annualGross - iit36;
+    
     return { annualGross, wht, netWht, iit36, netIit };
   };
 
@@ -781,6 +787,8 @@ export default function PortfolioPage() {
                       // Calculate initial investment capital if earnings are specified
                       const initialCapital = item.earnings ? item.amount - item.earnings : item.amount;
                       const growthPercent = item.earnings ? (item.earnings / initialCapital) * 100 : 0;
+                      const isFiof = item.fund.toUpperCase().includes("FIOF") || 
+                                     item.fund.toLowerCase().includes("first income opportunities");
 
                       return (
                         <div key={item.id} className="glass-card investment-item-card animate-fade-in">
@@ -853,14 +861,24 @@ export default function PortfolioPage() {
                             </table>
                           </div>
 
-                          <div className="tax-comparisons-strip green-tax-strip" style={{ marginTop: "8px" }}>
+                          {/* Dynamic tax treatment strip based on FIOF status */}
+                          <div className={`tax-comparisons-strip ${isFiof ? "red-tax-strip" : "green-tax-strip"}`} style={{ marginTop: "8px" }}>
                             <div className="tax-sub-item">
                               <ShieldCheck size={12} style={{ color: "var(--color-emerald)", marginRight: "4px" }} />
                               <span>WHT: <strong>Tax-Free (0%)</strong></span>
                             </div>
                             <div className="tax-sub-item">
-                              <ShieldCheck size={12} style={{ color: "var(--color-emerald)", marginRight: "4px" }} />
-                              <span>Individual Income Tax (IIT): <strong>Tax-Free (0% SEC Exemption)</strong></span>
+                              {isFiof ? (
+                                <>
+                                  <Info size={12} style={{ color: "#ef4444", marginRight: "4px" }} />
+                                  <span>Individual Income Tax (IIT): <strong style={{ color: "#ef4444" }}>Subject to Tax (36% IIT applies)</strong></span>
+                                </>
+                              ) : (
+                                <>
+                                  <ShieldCheck size={12} style={{ color: "var(--color-emerald)", marginRight: "4px" }} />
+                                  <span>Individual Income Tax (IIT): <strong>Tax-Free (0% SEC Exemption)</strong></span>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1440,6 +1458,15 @@ export default function PortfolioPage() {
         .green-tax-strip {
           background: rgba(16, 185, 129, 0.03);
           border: 1px solid rgba(16, 185, 129, 0.1);
+          padding: 8px 12px;
+          border-radius: 6px;
+          border-top: none;
+          margin-top: 4px;
+        }
+
+        .red-tax-strip {
+          background: rgba(239, 68, 68, 0.03);
+          border: 1px solid rgba(239, 68, 68, 0.1);
           padding: 8px 12px;
           border-radius: 6px;
           border-top: none;

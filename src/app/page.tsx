@@ -176,10 +176,13 @@ export default function Dashboard() {
 
     portfolio.uts.forEach(item => {
       const gross = item.amount * (item.rate / 100);
+      const isFiof = item.fund.toUpperCase().includes("FIOF") || 
+                     item.fund.toLowerCase().includes("first income opportunities");
+      const iit = isFiof ? gross * 0.36 : 0;
       utInvested += item.amount;
       utGross += gross;
       utNetWht += gross; // Tax free!
-      utNetIit += gross; // Tax free!
+      utNetIit += (gross - iit);
     });
 
     let trInvested = 0;
