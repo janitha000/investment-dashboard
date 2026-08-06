@@ -18,6 +18,9 @@ interface UtInvestment {
   fund: string;
   amount: number;
   rate: number;
+  units?: number;
+  unitPrice?: number;
+  earnings?: number;
 }
 
 interface TreasuryInvestment {
@@ -57,6 +60,10 @@ export default function PortfolioPage() {
   const [utFund, setUtFund] = useState<string>("CAL Money Market Fund");
   const [utAmount, setUtAmount] = useState<string>("");
   const [utRate, setUtRate] = useState<string>("");
+  const [utInputMode, setUtInputMode] = useState<"simple" | "units">("simple");
+  const [utUnits, setUtUnits] = useState<string>("");
+  const [utUnitPrice, setUtUnitPrice] = useState<string>("");
+  const [utEarnings, setUtEarnings] = useState<string>("");
 
   // Input states for Treasury Form
   const [trType, setTrType] = useState<"tbill" | "tbond">("tbill");
@@ -108,15 +115,36 @@ export default function PortfolioPage() {
 
   const handleAddUt = (e: React.FormEvent) => {
     e.preventDefault();
-    const amountNum = parseFloat(utAmount);
+    let amountNum = parseFloat(utAmount);
     const rateNum = parseFloat(utRate);
-    if (!amountNum || !rateNum) return;
+    if (!rateNum) return;
+
+    let unitsNum: number | undefined;
+    let priceNum: number | undefined;
+    let earningsNum: number | undefined;
+
+    if (utInputMode === "units") {
+      unitsNum = parseFloat(utUnits);
+      priceNum = parseFloat(utUnitPrice);
+      if (unitsNum && priceNum) {
+        amountNum = unitsNum * priceNum;
+      }
+    }
+
+    if (!amountNum) return;
+
+    if (utEarnings.trim()) {
+      earningsNum = parseFloat(utEarnings);
+    }
 
     const newItem: UtInvestment = {
       id: Date.now().toString(),
       fund: utFund,
       amount: amountNum,
-      rate: rateNum
+      rate: rateNum,
+      units: unitsNum,
+      unitPrice: priceNum,
+      earnings: earningsNum
     };
 
     const updated = {
@@ -126,6 +154,9 @@ export default function PortfolioPage() {
     savePortfolio(updated);
     setUtAmount("");
     setUtRate("");
+    setUtUnits("");
+    setUtUnitPrice("");
+    setUtEarnings("");
   };
 
   const handleAddTreasury = (e: React.FormEvent) => {
@@ -630,25 +661,96 @@ export default function PortfolioPage() {
                       required
                     />
                   </div>
+
+                  {/* Input Mode Toggle */}
                   <div className="input-group">
-                    <label>Capital Invested (LKR)</label>
+                    <label>Investment Input Method</label>
+                    <div className="form-radio-row">
+                      <button 
+                        type="button"
+                        className={`radio-btn ${utInputMode === "simple" ? "active" : ""}`}
+                        onClick={() => setUtInputMode("simple")}
+                      >
+                        Capital Amount
+                      </button>
+                      <button 
+                        type="button"
+                        className={`radio-btn ${utInputMode === "units" ? "active" : ""}`}
+                        onClick={() => setUtInputMode("units")}
+                      >
+                        Units & Price
+                      </button>
+                    </div>
+                  </div>
+
+                  {utInputMode === "simple" ? (
+                    <div className="input-group">
+                      <label>Capital Invested (LKR)</label>
+                      <input 
+                        type="number" 
+                        value={utAmount} 
+                        onChange={(e) => setUtAmount(e.target.value)} 
+                        placeholder="e.g. 500000"
+                        className="glass-input"
+                        required
+                      />
+                    </div>
+                  ) : (
+                    <div className="input-row-double">
+                      <div className="input-group">
+                        <label>Units Held</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          value={utUnits} 
+                          onChange={(e) => setUtUnits(e.target.value)} 
+                          placeholder="e.g. 248116.05"
+                          className="glass-input"
+                          required
+                        />
+                      </div>
+                      <div className="input-group">
+                        <label>Unit Price (LKR)</label>
+                        <input 
+                          type="number" 
+                          step="0.0001"
+                          value={utUnitPrice} 
+                          onChange={(e) => setUtUnitPrice(e.target.value)} 
+                          placeholder="e.g. 43.4257"
+                          className="glass-input"
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Optional Earnings (details) */}
+                  <div className="input-group">
+                    <label>Cumulative Earnings (LKR) - Optional</label>
                     <input 
                       type="number" 
-                      value={utAmount} 
-                      onChange={(e) => setUtAmount(e.target.value)} 
-                      placeholder="e.g. 500000"
+                      value={utEarnings} 
+                      onChange={(e) => setUtEarnings(e.target.value)} 
+                      placeholder="e.g. 1774612"
                       className="glass-input"
-                      required
                     />
+                    <span className="input-hint">Used to calculate your historical growth yield.</span>
                   </div>
+
+                  {utInputMode === "units" && parseFloat(utUnits) && parseFloat(utUnitPrice) ? (
+                    <div className="ai-sync-status-box success" style={{ fontSize: "0.75rem", marginTop: "-4px" }}>
+                      Calculated Current Balance: <strong>{formatLKR(parseFloat(utUnits) * parseFloat(utUnitPrice))}</strong>
+                    </div>
+                  ) : null}
+
                   <div className="input-group">
-                    <label>Annualized Dividend Yield (% p.a.)</label>
+                    <label>Annualized Yield / Rate (% p.a.)</label>
                     <input 
                       type="number" 
                       step="0.05"
                       value={utRate} 
                       onChange={(e) => setUtRate(e.target.value)} 
-                      placeholder="e.g. 10.85"
+                      placeholder="e.g. 11.20"
                       className="glass-input"
                       required
                     />
@@ -675,6 +777,11 @@ export default function PortfolioPage() {
                   <div className="investments-scroll-grid">
                     {portfolio.uts.map((item) => {
                       const res = calculateUtReturns(item);
+                      
+                      // Calculate initial investment capital if earnings are specified
+                      const initialCapital = item.earnings ? item.amount - item.earnings : item.amount;
+                      const growthPercent = item.earnings ? (item.earnings / initialCapital) * 100 : 0;
+
                       return (
                         <div key={item.id} className="glass-card investment-item-card animate-fade-in">
                           <div className="item-header">
@@ -690,33 +797,70 @@ export default function PortfolioPage() {
                             </button>
                           </div>
 
-                          <div className="item-values-grid">
-                            <div className="val-block">
-                              <span className="val-lbl">Principal</span>
-                              <span className="val-num text-teal">{formatLKR(item.amount)}</span>
+                          <div className="card-top-info-row" style={{ flexWrap: "wrap", gap: "1rem" }}>
+                            <div className="info-badge-val">
+                              <span className="lbl">Current Balance:</span>
+                              <span className="val text-teal">{formatLKR(item.amount)}</span>
                             </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Yield</span>
-                              <span className="val-num">{item.rate.toFixed(2)}%</span>
+                            <div className="info-badge-val">
+                              <span className="lbl">Yield:</span>
+                              <span className="val text-white">{item.rate.toFixed(2)}%</span>
                             </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Net Monthly</span>
-                              <span className="val-num text-emerald">{formatLKR(res.netWht / 12)}</span>
-                            </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Net Annual</span>
-                              <span className="val-num text-emerald">{formatLKR(res.netWht)}</span>
-                            </div>
+                            {item.units && item.unitPrice && (
+                              <>
+                                <div className="info-badge-val">
+                                  <span className="lbl">Units:</span>
+                                  <span className="val text-white">{item.units.toLocaleString("en-LK", { maximumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="info-badge-val">
+                                  <span className="lbl">Unit Price:</span>
+                                  <span className="val text-white">{item.unitPrice.toFixed(4)}</span>
+                                </div>
+                              </>
+                            )}
+                            {item.earnings && (
+                              <div className="info-badge-val" style={{ marginLeft: "auto" }}>
+                                <span className="lbl">Gain:</span>
+                                <span className="val text-emerald">+{growthPercent.toFixed(2)}% ({formatLKR(item.earnings)})</span>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="tax-comparisons-strip green-tax-strip">
+                          <div className="item-mini-table-wrapper">
+                            <table className="item-mini-table">
+                              <thead>
+                                <tr>
+                                  <th>Period</th>
+                                  <th>Gross Income</th>
+                                  <th>Net (After WHT)</th>
+                                  <th>Net (After 36% IIT)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td className="period-col">Monthly</td>
+                                  <td>{formatLKR(res.annualGross / 12)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netWht / 12)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netIit / 12)}</td>
+                                </tr>
+                                <tr>
+                                  <td className="period-col">Annually</td>
+                                  <td>{formatLKR(res.annualGross)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netWht)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netIit)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          <div className="tax-comparisons-strip green-tax-strip" style={{ marginTop: "8px" }}>
                             <div className="tax-sub-item">
                               <ShieldCheck size={12} style={{ color: "var(--color-emerald)", marginRight: "4px" }} />
-                              <span>WHT Deducted: <strong>Tax-Free (0%)</strong></span>
+                              <span>WHT: <strong>Tax-Free (0%)</strong></span>
                             </div>
                             <div className="tax-sub-item">
                               <ShieldCheck size={12} style={{ color: "var(--color-emerald)", marginRight: "4px" }} />
-                              <span>Individual Income Tax (IIT): <strong>Tax-Free (0%)</strong></span>
+                              <span>Individual Income Tax (IIT): <strong>Tax-Free (0% SEC Exemption)</strong></span>
                             </div>
                           </div>
                         </div>
@@ -851,34 +995,42 @@ export default function PortfolioPage() {
                             </button>
                           </div>
 
-                          <div className="item-values-grid">
-                            <div className="val-block">
-                              <span className="val-lbl">{item.type === "tbill" ? "Face Value" : "Capital"}</span>
-                              <span className="val-num text-teal">{formatLKR(item.amount)}</span>
+                          <div className="card-top-info-row">
+                            <div className="info-badge-val">
+                              <span className="lbl">{item.type === "tbill" ? "Face Value:" : "Invested Capital:"}</span>
+                              <span className="val text-teal">{formatLKR(item.amount)}</span>
                             </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Yield</span>
-                              <span className="val-num">{item.rate.toFixed(2)}%</span>
-                            </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Net Monthly</span>
-                              <span className="val-num text-emerald">{formatLKR(res.netWht / 12)}</span>
-                            </div>
-                            <div className="val-block">
-                              <span className="val-lbl">Net Annual</span>
-                              <span className="val-num text-emerald">{formatLKR(res.netWht)}</span>
+                            <div className="info-badge-val">
+                              <span className="lbl">Yield Rate:</span>
+                              <span className="val text-white">{item.rate.toFixed(2)}%</span>
                             </div>
                           </div>
 
-                          <div className="tax-comparisons-strip">
-                            <div className="tax-sub-item">
-                              <span>WHT Withheld (10%):</span>
-                              <span className="text-coral">-{formatLKR(res.wht)}</span>
-                            </div>
-                            <div className="tax-sub-item highlight-purple">
-                              <span>Net 36% IIT Income:</span>
-                              <span>{formatLKR(res.netIit)}</span>
-                            </div>
+                          <div className="item-mini-table-wrapper">
+                            <table className="item-mini-table">
+                              <thead>
+                                <tr>
+                                  <th>Period</th>
+                                  <th>Gross Income</th>
+                                  <th>Net (After WHT)</th>
+                                  <th>Net (After 36% IIT)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td className="period-col">Monthly</td>
+                                  <td>{formatLKR(res.annualGross / 12)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netWht / 12)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit / 12)}</td>
+                                </tr>
+                                <tr>
+                                  <td className="period-col">Annually</td>
+                                  <td>{formatLKR(res.annualGross)}</td>
+                                  <td className="text-emerald">{formatLKR(res.netWht)}</td>
+                                  <td style={{ color: "#d8b4fe" }}>{formatLKR(res.netIit)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       );
