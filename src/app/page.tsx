@@ -235,7 +235,7 @@ export default function Dashboard() {
       const dep = (item.depreciationRate ?? 5) / 100;
       const r = item.rate / 100;
       pfcaInvested += item.amount * fx;
-      // Effective LKR gain = interest + FX valuation (+ cross term)
+      // Interest at year-end FX + USD capital gain both count as income
       pfcaGross += item.amount * fx * ((1 + r) * (1 + dep) - 1);
     });
 

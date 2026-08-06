@@ -38,23 +38,31 @@ function calcGross(item: ScenarioItem): number {
   if (item.category === "dividend") return item.yearlyDividend ?? (item.amount * (item.rate / 100));
   if (item.category === "treasury" && item.couponValue) return item.couponValue * 2;
   if (item.category === "pfca") {
-    // amount is LKR-equivalent capital; effective = interest + FX valuation + cross term
+    // Interest only — USD capital gain is tracked separately
     const dep = (item.depreciationRate ?? 5) / 100;
     const r = item.rate / 100;
-    return item.amount * ((1 + r) * (1 + dep) - 1);
+    return item.amount * r * (1 + dep);
   }
   return item.amount * (item.rate / 100);
 }
 
+function calcPfcaFxGain(item: ScenarioItem): number {
+  if (item.category !== "pfca") return 0;
+  const dep = (item.depreciationRate ?? 5) / 100;
+  return item.amount * dep;
+}
+
 function calcReturns(item: ScenarioItem) {
-  const gross = calcGross(item);
-  // UT yields are quoted net of WHT; dividends and PFCA interest carry no WHT.
+  const interest = calcGross(item);
+  const fxGain = calcPfcaFxGain(item);
+  const gross = interest + fxGain;
+  // UT yields are quoted net of WHT; dividends and PFCA carry no WHT.
   const noWht = item.category === "ut" || item.category === "dividend" || item.category === "pfca";
-  const wht = noWht ? 0 : gross * 0.10;
+  const wht = noWht ? 0 : interest * 0.10;
   const netWht = gross - wht;
-  const iit = (item.category === "dividend" || item.category === "pfca") ? 0 : gross * 0.36;
+  const iit = (item.category === "dividend" || item.category === "pfca") ? 0 : interest * 0.36;
   const netIit = gross - iit;
-  return { gross, netWht, netIit };
+  return { gross, interest, fxGain, netWht, netIit };
 }
 
 function portfolioToItems(p: PortfolioState): ScenarioItem[] {
@@ -88,6 +96,7 @@ function calcTotals(items: ScenarioItem[]) {
   let invested = 0, gross = 0, netWht = 0, netIit = 0;
   let coreInvested = 0, coreGross = 0;
   let taxFreeInvested = 0, taxFreeGross = 0;
+  let pfcaInvested = 0, usdCapitalGain = 0;
   items.forEach(it => {
     const r = calcReturns(it);
     invested += it.amount;
@@ -96,7 +105,11 @@ function calcTotals(items: ScenarioItem[]) {
     netIit += r.netIit;
     if (it.category === "dividend" || it.category === "pfca") {
       taxFreeInvested += it.amount;
-      taxFreeGross += r.gross;
+      taxFreeGross += r.interest; // interest / dividend only
+      if (it.category === "pfca") {
+        pfcaInvested += it.amount;
+        usdCapitalGain += r.fxGain;
+      }
     } else {
       coreInvested += it.amount;
       coreGross += r.gross;
@@ -104,8 +117,15 @@ function calcTotals(items: ScenarioItem[]) {
   });
   const coreYield = coreInvested > 0 ? (coreGross / coreInvested) * 100 : 0;
   const taxFreeYield = taxFreeInvested > 0 ? (taxFreeGross / taxFreeInvested) * 100 : 0;
+  const usdCapitalGainYield = pfcaInvested > 0 ? (usdCapitalGain / pfcaInvested) * 100 : 0;
   const combinedYield = invested > 0 ? (gross / invested) * 100 : 0;
-  return { invested, gross, netWht, netIit, coreInvested, coreGross, coreYield, taxFreeInvested, taxFreeGross, taxFreeYield, combinedYield };
+  return {
+    invested, gross, netWht, netIit,
+    coreInvested, coreGross, coreYield,
+    taxFreeInvested, taxFreeGross, taxFreeYield,
+    usdCapitalGain, usdCapitalGainYield,
+    combinedYield,
+  };
 }
 
 const SC_COLORS = ["#00f2fe","#10b981","#a78bfa","#f59e0b","#ef4444","#06b6d4","#ec4899","#84cc16"];
@@ -260,7 +280,7 @@ export default function ScenariosPage() {
           </div>
           <div className="sc-base-inv">{fmt(baseTot.invested)}<span>Total Invested</span></div>
         </div>
-        {(baseTot.coreInvested > 0 || baseTot.taxFreeInvested > 0) && (
+        {(baseTot.coreInvested > 0 || baseTot.taxFreeInvested > 0 || baseTot.usdCapitalGain > 0) && (
           <div className="sc-split-yields">
             {baseTot.coreInvested > 0 && (
               <div className="sc-sy core">
@@ -274,6 +294,13 @@ export default function ScenariosPage() {
                 <span className="sc-sy-lbl">Dividend + PFCA</span>
                 <span className="sc-sy-val">{pct(baseTot.taxFreeYield)}</span>
                 <span className="sc-sy-cap">{fmt(baseTot.taxFreeInvested)}</span>
+              </div>
+            )}
+            {baseTot.usdCapitalGain > 0 && (
+              <div className="sc-sy usd-gain">
+                <span className="sc-sy-lbl">USD Capital Gain</span>
+                <span className="sc-sy-val">{pct(baseTot.usdCapitalGainYield)}</span>
+                <span className="sc-sy-cap">{fmt(baseTot.usdCapitalGain/div)}/{period==="monthly"?"mo":"yr"}</span>
               </div>
             )}
             {baseTot.invested > 0 && (
@@ -356,6 +383,12 @@ export default function ScenariosPage() {
                     <div className="sc-spill">
                       <span className="sc-plbl">Div+PFCA</span>
                       <span className="sc-pval" style={{color:"#818cf8"}}>{pct(tot.taxFreeYield)}</span>
+                    </div>
+                  )}
+                  {tot.usdCapitalGain > 0 && (
+                    <div className="sc-spill">
+                      <span className="sc-plbl">USD Cap. Gain</span>
+                      <span className="sc-pval" style={{color:"#fb7185"}}>{fmt(tot.usdCapitalGain/div)}/{period==="monthly"?"mo":"yr"}</span>
                     </div>
                   )}
                   {tot.invested > 0 && (
@@ -501,7 +534,7 @@ export default function ScenariosPage() {
                 <table className="sc-cmptbl">
                   <thead><tr>
                     <th>Strategy</th><th>Total Invested</th>
-                    <th>FD+UT+Treasury</th><th>Div+PFCA</th><th>All Combined</th>
+                    <th>FD+UT+Treasury</th><th>Div+PFCA</th><th>USD Cap. Gain</th><th>All Combined</th>
                     <th>Gross {period==="monthly"?"Monthly":"Annual"}</th>
                     <th>Net (After WHT)</th><th>Net (After 36% IIT)</th><th>vs Baseline</th>
                   </tr></thead>
@@ -514,6 +547,7 @@ export default function ScenariosPage() {
                           <td style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.invested)}</td>
                           <td style={{color:"var(--color-teal)",fontWeight:700}}>{row.totals.coreInvested > 0 ? pct(row.totals.coreYield) : "—"}</td>
                           <td style={{color:"#818cf8",fontWeight:700}}>{row.totals.taxFreeInvested > 0 ? pct(row.totals.taxFreeYield) : "—"}</td>
+                          <td style={{color:"#fb7185",fontWeight:700}}>{row.totals.usdCapitalGain > 0 ? fmt(row.totals.usdCapitalGain/div) : "—"}</td>
                           <td className="sc-em" style={{fontWeight:700}}>{row.totals.invested > 0 ? pct(row.totals.combinedYield) : "—"}</td>
                           <td style={{fontFamily:"var(--font-display)"}}>{fmt(row.totals.gross/div)}</td>
                           <td className="sc-em" style={{fontFamily:"var(--font-display)",fontWeight:700}}>{fmt(row.totals.netWht/div)}</td>
@@ -560,11 +594,13 @@ export default function ScenariosPage() {
         .sc-sy{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;border:1px solid;font-size:.72rem}
         .sc-sy.core{background:rgba(0,242,254,.06);border-color:rgba(0,242,254,.2)}
         .sc-sy.taxfree{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.22)}
+        .sc-sy.usd-gain{background:rgba(244,63,94,.08);border-color:rgba(244,63,94,.22)}
         .sc-sy.combined{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.22)}
         .sc-sy-lbl{font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em}
         .sc-sy-val{font-family:var(--font-display);font-weight:800;font-size:.9rem}
         .sc-sy.core .sc-sy-val{color:var(--color-teal)}
         .sc-sy.taxfree .sc-sy-val{color:#818cf8}
+        .sc-sy.usd-gain .sc-sy-val{color:#fb7185}
         .sc-sy.combined .sc-sy-val{color:var(--color-emerald)}
         .sc-sy-cap{color:var(--text-secondary);font-weight:600;padding-left:6px;border-left:1px solid var(--border-color)}
         .sc-inc-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem}
