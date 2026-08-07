@@ -66,6 +66,14 @@ async function sqlReady() {
   return getSql();
 }
 
+/**
+ * Neon/pg encodes JS arrays as Postgres array literals, which a jsonb column
+ * rejects. Always hand JSON columns an explicit JSON string.
+ */
+function jsonParam(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
 export type PortfolioData = {
   fds: unknown[];
   uts: unknown[];
@@ -109,7 +117,7 @@ export async function savePortfolio(data: PortfolioData): Promise<void> {
   };
   await sql`
     INSERT INTO portfolio_state (id, data, updated_at)
-    VALUES (1, ${payload}, NOW())
+    VALUES (1, ${jsonParam(payload)}::jsonb, NOW())
     ON CONFLICT (id) DO UPDATE
     SET data = EXCLUDED.data, updated_at = NOW()
   `;
@@ -139,8 +147,8 @@ export async function insertSnapshot(snap: SnapshotRow): Promise<void> {
       ${snap.id},
       ${snap.timestamp},
       ${snap.label ?? null},
-      ${snap.portfolio},
-      ${snap.totals}
+      ${jsonParam(snap.portfolio)}::jsonb,
+      ${jsonParam(snap.totals)}::jsonb
     )
     ON CONFLICT (id) DO UPDATE SET
       timestamp = EXCLUDED.timestamp,
@@ -170,7 +178,7 @@ export async function saveScenarios(data: unknown[]): Promise<void> {
   const sql = await sqlReady();
   await sql`
     INSERT INTO scenarios (id, data, updated_at)
-    VALUES (1, ${data}, NOW())
+    VALUES (1, ${jsonParam(Array.isArray(data) ? data : [])}::jsonb, NOW())
     ON CONFLICT (id) DO UPDATE
     SET data = EXCLUDED.data, updated_at = NOW()
   `;

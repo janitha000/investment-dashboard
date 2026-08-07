@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import { useRates } from "@/context/RatesContext";
 import { calcProgressiveIit, PERSONAL_RELIEF } from "@/lib/tax";
-import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe, Camera, Clock, Download, Upload } from "lucide-react";
+import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe, Camera, Clock, Download, Upload, UploadCloud } from "lucide-react";
 import { downloadBackup, type BackupFile } from "@/lib/backup";
+import { localDataSummary, migrateLocalStorageToNeon } from "@/lib/migrateLocalToNeon";
 
 interface FdInvestment {
   id: string;
@@ -164,7 +165,13 @@ export default function PortfolioPage() {
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const [replaceOnImport, setReplaceOnImport] = useState(false);
+  const [localData, setLocalData] = useState({ holdings: 0, snapshots: 0, scenarios: 0, any: false });
+  const [migrating, setMigrating] = useState(false);
   const importInputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setLocalData(localDataSummary());
+  }, []);
 
   // Load portfolio + snapshots from Neon APIs
   useEffect(() => {
@@ -722,6 +729,42 @@ export default function PortfolioPage() {
     setTimeout(() => setSnapshotFlash(null), 2500);
   };
 
+  const reloadFromCloud = async () => {
+    const [pRes, sRes] = await Promise.all([fetch("/api/portfolio"), fetch("/api/snapshots")]);
+    if (pRes.ok) {
+      const p = await pRes.json();
+      setPortfolio({
+        fds: p.fds || [],
+        uts: p.uts || [],
+        treasury: p.treasury || [],
+        dividends: p.dividends || [],
+        pfcaFds: p.pfcaFds || [],
+      });
+    }
+    if (sRes.ok) {
+      const snaps = await sRes.json();
+      if (Array.isArray(snaps)) setSnapshots(snaps);
+    }
+  };
+
+  const handleMigrateLocalData = async () => {
+    setMigrating(true);
+    try {
+      const result = await migrateLocalStorageToNeon({ replace: replaceOnImport });
+      if (result.imported && (result.imported.portfolio || result.imported.snapshots > 0)) {
+        await reloadFromCloud();
+        setShowSnapshots(true);
+      }
+      setLocalData(localDataSummary());
+      setSnapshotFlash(result.message || "Migration finished");
+    } catch (e) {
+      setSnapshotFlash(e instanceof Error ? e.message : "Migration failed");
+    } finally {
+      setMigrating(false);
+      setTimeout(() => setSnapshotFlash(null), 5000);
+    }
+  };
+
   const handleImportFile = async (file: File) => {
     try {
       const text = await file.text();
@@ -746,7 +789,11 @@ export default function PortfolioPage() {
       const skipped = result.imported?.skipped?.length
         ? ` (skipped: ${result.imported.skipped.join(", ")})`
         : "";
-      setSnapshotFlash(`Imported to Neon${skipped}`);
+      const failed = result.imported?.errors?.length
+        ? ` — ${result.imported.errors.length} row(s) failed`
+        : "";
+      setSnapshotFlash(`Imported to Neon${skipped}${failed}`);
+      if (result.imported?.errors?.length) console.warn("Import row errors:", result.imported.errors);
       setShowSnapshots(true);
     } catch (e) {
       setSnapshotFlash(e instanceof Error ? e.message : "Import failed");
@@ -892,6 +939,26 @@ export default function PortfolioPage() {
                   e.target.value = "";
                 }}
               />
+              {localData.any && (
+                <button
+                  type="button"
+                  className="snapshot-btn migrate"
+                  onClick={handleMigrateLocalData}
+                  disabled={migrating}
+                  title="Read this browser's saved data and upload it to Neon"
+                >
+                  <UploadCloud size={14} />
+                  {migrating
+                    ? "Migrating…"
+                    : `Migrate Local Data (${[
+                        localData.holdings ? `${localData.holdings} holdings` : null,
+                        localData.snapshots ? `${localData.snapshots} snaps` : null,
+                        localData.scenarios ? `${localData.scenarios} scenarios` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")})`}
+                </button>
+              )}
               {snapshots.length > 0 && (
                 <button
                   type="button"
@@ -903,13 +970,13 @@ export default function PortfolioPage() {
                 </button>
               )}
             </div>
-            <label className="import-replace-lbl">
+              <label className="import-replace-lbl">
               <input
                 type="checkbox"
                 checked={replaceOnImport}
                 onChange={(e) => setReplaceOnImport(e.target.checked)}
               />
-              Replace cloud data on import
+              Replace cloud data on migrate / import
             </label>
             {snapshotFlash && (
               <span className="snapshot-flash">{snapshotFlash}</span>
@@ -2562,6 +2629,22 @@ export default function PortfolioPage() {
         .snapshot-btn:hover {
           background: rgba(0, 242, 254, 0.16);
           transform: translateY(-1px);
+        }
+
+        .snapshot-btn.migrate {
+          border-color: rgba(251, 191, 36, 0.45);
+          background: rgba(251, 191, 36, 0.12);
+          color: #fbbf24;
+        }
+
+        .snapshot-btn.migrate:hover {
+          background: rgba(251, 191, 36, 0.2);
+        }
+
+        .snapshot-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+          transform: none;
         }
 
         .snapshot-history-btn {
