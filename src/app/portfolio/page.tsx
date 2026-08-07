@@ -2489,6 +2489,8 @@ export default function PortfolioPage() {
 
       <style jsx>{`
         .portfolio-overview-card {
+          width: 100%;
+          box-sizing: border-box;
           padding: 1.5rem;
           margin-bottom: 2rem;
           background: linear-gradient(135deg, rgba(0, 242, 254, 0.03) 0%, rgba(9, 14, 26, 0.4) 100%);
@@ -2833,8 +2835,9 @@ export default function PortfolioPage() {
 
         .portfolio-summary-bar {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 1.5rem;
+          width: 100%;
         }
 
         @media (max-width: 1024px) {

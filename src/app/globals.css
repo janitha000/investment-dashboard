@@ -96,6 +96,10 @@ body {
   animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.text-sans-layout {
+  width: 100%;
+}
+
 /* Shared Utility layouts */
 .dashboard-container {
   display: flex;
