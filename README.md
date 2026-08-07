@@ -15,7 +15,8 @@ Next.js app for tracking Sri Lankan passive-income investments (FD, Unit Trusts,
 
 1. Create a project at [neon.tech](https://neon.tech)
 2. Copy the connection string into `DATABASE_URL`
-3. Run [`scripts/schema.sql`](scripts/schema.sql) in the Neon SQL Editor
+3. Tables are created **automatically** on first API use (`CREATE TABLE IF NOT EXISTS`).  
+   [`scripts/schema.sql`](scripts/schema.sql) is optional (manual / reference only).
 
 ### 2. Environment
 

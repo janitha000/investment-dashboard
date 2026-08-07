@@ -1,5 +1,6 @@
 -- LankaWealth Neon schema (single-user)
--- Run once in Neon SQL Editor
+-- Optional reference — the app also auto-creates these tables via ensureSchema()
+-- on first database access. Safe to run manually in Neon SQL Editor if preferred.
 
 CREATE TABLE IF NOT EXISTS portfolio_state (
   id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),

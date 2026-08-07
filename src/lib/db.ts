@@ -8,6 +8,64 @@ export function getSql() {
   return neon(url);
 }
 
+let schemaReady: Promise<void> | null = null;
+
+/** Idempotent schema bootstrap — runs once per serverless cold start. */
+export async function ensureSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      const sql = getSql();
+      await sql`
+        CREATE TABLE IF NOT EXISTS portfolio_state (
+          id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+          data JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        INSERT INTO portfolio_state (id, data)
+        VALUES (1, '{"fds":[],"uts":[],"treasury":[],"dividends":[],"pfcaFds":[]}'::jsonb)
+        ON CONFLICT (id) DO NOTHING
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+          id TEXT PRIMARY KEY,
+          timestamp TIMESTAMPTZ NOT NULL,
+          label TEXT,
+          portfolio JSONB NOT NULL,
+          totals JSONB NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        CREATE INDEX IF NOT EXISTS portfolio_snapshots_timestamp_idx
+        ON portfolio_snapshots (timestamp DESC)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS scenarios (
+          id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+          data JSONB NOT NULL DEFAULT '[]'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        INSERT INTO scenarios (id, data)
+        VALUES (1, '[]'::jsonb)
+        ON CONFLICT (id) DO NOTHING
+      `;
+    })().catch((err) => {
+      schemaReady = null; // allow retry on next request
+      throw err;
+    });
+  }
+  await schemaReady;
+}
+
+async function sqlReady() {
+  await ensureSchema();
+  return getSql();
+}
+
 export type PortfolioData = {
   fds: unknown[];
   uts: unknown[];
@@ -25,7 +83,7 @@ export type SnapshotRow = {
 };
 
 export async function getPortfolio(): Promise<PortfolioData> {
-  const sql = getSql();
+  const sql = await sqlReady();
   const rows = await sql`SELECT data FROM portfolio_state WHERE id = 1`;
   if (!rows.length) {
     return { fds: [], uts: [], treasury: [], dividends: [], pfcaFds: [] };
@@ -41,7 +99,7 @@ export async function getPortfolio(): Promise<PortfolioData> {
 }
 
 export async function savePortfolio(data: PortfolioData): Promise<void> {
-  const sql = getSql();
+  const sql = await sqlReady();
   const payload = {
     fds: data.fds || [],
     uts: data.uts || [],
@@ -58,7 +116,7 @@ export async function savePortfolio(data: PortfolioData): Promise<void> {
 }
 
 export async function listSnapshots(): Promise<SnapshotRow[]> {
-  const sql = getSql();
+  const sql = await sqlReady();
   const rows = await sql`
     SELECT id, timestamp, label, portfolio, totals
     FROM portfolio_snapshots
@@ -74,7 +132,7 @@ export async function listSnapshots(): Promise<SnapshotRow[]> {
 }
 
 export async function insertSnapshot(snap: SnapshotRow): Promise<void> {
-  const sql = getSql();
+  const sql = await sqlReady();
   await sql`
     INSERT INTO portfolio_snapshots (id, timestamp, label, portfolio, totals)
     VALUES (
@@ -93,7 +151,7 @@ export async function insertSnapshot(snap: SnapshotRow): Promise<void> {
 }
 
 export async function deleteSnapshot(id: string): Promise<boolean> {
-  const sql = getSql();
+  const sql = await sqlReady();
   const rows = await sql`
     DELETE FROM portfolio_snapshots WHERE id = ${id} RETURNING id
   `;
@@ -101,7 +159,7 @@ export async function deleteSnapshot(id: string): Promise<boolean> {
 }
 
 export async function getScenarios(): Promise<unknown[]> {
-  const sql = getSql();
+  const sql = await sqlReady();
   const rows = await sql`SELECT data FROM scenarios WHERE id = 1`;
   if (!rows.length) return [];
   const data = rows[0].data;
@@ -109,7 +167,7 @@ export async function getScenarios(): Promise<unknown[]> {
 }
 
 export async function saveScenarios(data: unknown[]): Promise<void> {
-  const sql = getSql();
+  const sql = await sqlReady();
   await sql`
     INSERT INTO scenarios (id, data, updated_at)
     VALUES (1, ${data}, NOW())
@@ -135,7 +193,7 @@ export async function isScenariosEmpty(): Promise<boolean> {
 }
 
 export async function snapshotCount(): Promise<number> {
-  const sql = getSql();
+  const sql = await sqlReady();
   const rows = await sql`SELECT COUNT(*)::int AS c FROM portfolio_snapshots`;
   return Number(rows[0]?.c ?? 0);
 }
