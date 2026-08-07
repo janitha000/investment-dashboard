@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { RatesProvider } from "@/context/RatesContext";
+import { AuthProvider } from "@/components/AuthProvider";
 import Sidebar from "@/components/Sidebar";
 import "./globals.css";
 
@@ -20,7 +21,7 @@ export default function RootLayout({
           <div className="dashboard-container">
             <Sidebar />
             <main className="main-content">
-              {children}
+              <AuthProvider>{children}</AuthProvider>
             </main>
           </div>
         </RatesProvider>

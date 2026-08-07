@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { useRates } from "@/context/RatesContext";
 import { calcProgressiveIit, PERSONAL_RELIEF } from "@/lib/tax";
-import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe, Camera, Clock } from "lucide-react";
+import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe, Camera, Clock, Download, Upload } from "lucide-react";
+import { downloadBackup, type BackupFile } from "@/lib/backup";
 
 interface FdInvestment {
   id: string;
@@ -93,8 +94,6 @@ interface PortfolioSnapshot {
   };
 }
 
-const SNAPSHOTS_KEY = "lankawealth_portfolio_snapshots";
-
 const INITIAL_STATE: PortfolioState = {
   fds: [],
   uts: [],
@@ -163,39 +162,54 @@ export default function PortfolioPage() {
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [snapshotFlash, setSnapshotFlash] = useState<string | null>(null);
   const [showSnapshots, setShowSnapshots] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [replaceOnImport, setReplaceOnImport] = useState(false);
+  const importInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Load from local storage
+  // Load portfolio + snapshots from Neon APIs
   useEffect(() => {
-    const saved = localStorage.getItem("lankawealth_portfolio");
-    if (saved) {
+    let cancelled = false;
+    (async () => {
       try {
-        const parsed = JSON.parse(saved);
-        setPortfolio({
-          fds: parsed.fds || [],
-          uts: parsed.uts || [],
-          treasury: parsed.treasury || [],
-          dividends: parsed.dividends || [],
-          pfcaFds: parsed.pfcaFds || [],
-        });
+        const [pRes, sRes] = await Promise.all([
+          fetch("/api/portfolio"),
+          fetch("/api/snapshots"),
+        ]);
+        if (pRes.ok) {
+          const parsed = await pRes.json();
+          if (!cancelled) {
+            setPortfolio({
+              fds: parsed.fds || [],
+              uts: parsed.uts || [],
+              treasury: parsed.treasury || [],
+              dividends: parsed.dividends || [],
+              pfcaFds: parsed.pfcaFds || [],
+            });
+          }
+        }
+        if (sRes.ok) {
+          const snaps = await sRes.json();
+          if (!cancelled && Array.isArray(snaps)) setSnapshots(snaps);
+        }
       } catch (e) {
-        console.error("Failed to parse portfolio", e);
+        console.error("Failed to load portfolio from API", e);
+      } finally {
+        if (!cancelled) setDataLoading(false);
       }
-    }
-    const snapSaved = localStorage.getItem(SNAPSHOTS_KEY);
-    if (snapSaved) {
-      try {
-        const parsed = JSON.parse(snapSaved);
-        if (Array.isArray(parsed)) setSnapshots(parsed);
-      } catch (e) {
-        console.error("Failed to parse snapshots", e);
-      }
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Save to local storage
+  // Save portfolio to Neon
   const savePortfolio = (updated: PortfolioState) => {
     setPortfolio(updated);
-    localStorage.setItem("lankawealth_portfolio", JSON.stringify(updated));
+    fetch("/api/portfolio", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    }).catch((e) => console.error("Failed to save portfolio", e));
   };
 
   const handleAddFd = (e: React.FormEvent) => {
@@ -615,10 +629,9 @@ export default function PortfolioPage() {
 
   const persistSnapshots = (next: PortfolioSnapshot[]) => {
     setSnapshots(next);
-    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(next));
   };
 
-  const handleSaveSnapshot = () => {
+  const handleSaveSnapshot = async () => {
     if (grandTotalInvested <= 0) {
       setSnapshotFlash("Add holdings before saving a snapshot");
       setTimeout(() => setSnapshotFlash(null), 2500);
@@ -648,15 +661,97 @@ export default function PortfolioPage() {
         combinedYield,
       },
     };
-    const next = [snap, ...snapshots];
-    persistSnapshots(next);
-    setShowSnapshots(true);
-    setSnapshotFlash("Snapshot saved");
+    try {
+      const res = await fetch("/api/snapshots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snap),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save snapshot");
+      }
+      persistSnapshots([snap, ...snapshots]);
+      setShowSnapshots(true);
+      setSnapshotFlash("Snapshot saved to cloud");
+    } catch (e) {
+      setSnapshotFlash(e instanceof Error ? e.message : "Snapshot failed");
+    }
     setTimeout(() => setSnapshotFlash(null), 2500);
   };
 
-  const handleDeleteSnapshot = (id: string) => {
-    persistSnapshots(snapshots.filter(s => s.id !== id));
+  const handleDeleteSnapshot = async (id: string) => {
+    try {
+      const res = await fetch(`/api/snapshots/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      persistSnapshots(snapshots.filter(s => s.id !== id));
+    } catch (e) {
+      console.error(e);
+      setSnapshotFlash("Could not delete snapshot");
+      setTimeout(() => setSnapshotFlash(null), 2500);
+    }
+  };
+
+  const handleExportBackup = async () => {
+    let scenarios: unknown[] = [];
+    try {
+      const scRes = await fetch("/api/scenarios");
+      if (scRes.ok) {
+        const sc = await scRes.json();
+        if (Array.isArray(sc)) scenarios = sc;
+      }
+    } catch { /* ignore */ }
+    if (scenarios.length === 0) {
+      try {
+        const raw = localStorage.getItem("lankawealth_scenarios");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) scenarios = parsed;
+        }
+      } catch { /* ignore */ }
+    }
+    const backup: BackupFile = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      portfolio,
+      snapshots,
+      scenarios,
+    };
+    downloadBackup(backup);
+    setSnapshotFlash("Backup JSON downloaded");
+    setTimeout(() => setSnapshotFlash(null), 2500);
+  };
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as BackupFile;
+      if (!parsed || typeof parsed !== "object") throw new Error("Invalid backup file");
+      const { importBackupToCloud } = await import("@/lib/backup");
+      const result = await importBackupToCloud(parsed, replaceOnImport ? "replace" : "fill-empty");
+      if (result.portfolio) {
+        setPortfolio({
+          fds: result.portfolio.fds || [],
+          uts: result.portfolio.uts || [],
+          treasury: result.portfolio.treasury || [],
+          dividends: result.portfolio.dividends || [],
+          pfcaFds: result.portfolio.pfcaFds || [],
+        });
+      }
+      const sRes = await fetch("/api/snapshots");
+      if (sRes.ok) {
+        const snaps = await sRes.json();
+        if (Array.isArray(snaps)) setSnapshots(snaps);
+      }
+      const skipped = result.imported?.skipped?.length
+        ? ` (skipped: ${result.imported.skipped.join(", ")})`
+        : "";
+      setSnapshotFlash(`Imported to Neon${skipped}`);
+      setShowSnapshots(true);
+    } catch (e) {
+      setSnapshotFlash(e instanceof Error ? e.message : "Import failed");
+    }
+    setTimeout(() => setSnapshotFlash(null), 4000);
   };
 
   const formatSnapTime = (iso: string) => {
@@ -768,6 +863,35 @@ export default function PortfolioPage() {
                 <Camera size={14} />
                 Save Snapshot
               </button>
+              <button
+                type="button"
+                className="snapshot-history-btn"
+                onClick={handleExportBackup}
+                title="Download portfolio + snapshots (+ local scenarios if present) as JSON"
+              >
+                <Download size={14} />
+                Export
+              </button>
+              <button
+                type="button"
+                className="snapshot-history-btn"
+                onClick={() => importInputRef.current?.click()}
+                title="Import a previously exported JSON backup into Neon"
+              >
+                <Upload size={14} />
+                Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleImportFile(f);
+                  e.target.value = "";
+                }}
+              />
               {snapshots.length > 0 && (
                 <button
                   type="button"
@@ -779,6 +903,14 @@ export default function PortfolioPage() {
                 </button>
               )}
             </div>
+            <label className="import-replace-lbl">
+              <input
+                type="checkbox"
+                checked={replaceOnImport}
+                onChange={(e) => setReplaceOnImport(e.target.checked)}
+              />
+              Replace cloud data on import
+            </label>
             {snapshotFlash && (
               <span className="snapshot-flash">{snapshotFlash}</span>
             )}
@@ -2455,6 +2587,17 @@ export default function PortfolioPage() {
           font-size: 0.7rem;
           font-weight: 700;
           color: var(--color-emerald);
+        }
+
+        .import-replace-lbl {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.65rem;
+          font-weight: 600;
+          color: var(--text-muted);
+          cursor: pointer;
+          user-select: none;
         }
 
         .snapshots-panel {

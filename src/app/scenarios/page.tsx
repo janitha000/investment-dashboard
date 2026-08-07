@@ -177,13 +177,35 @@ export default function ScenariosPage() {
   const [addDepreciation, setAddDepreciation] = useState<Record<string,string>>({});
 
   useEffect(() => {
-    try { const s = localStorage.getItem("lankawealth_portfolio"); if (s) setBaseline(portfolioToItems(JSON.parse(s))); } catch {}
-    try { const s = localStorage.getItem("lankawealth_scenarios"); if (s) setScenarios(JSON.parse(s)); } catch {}
+    let cancelled = false;
+    (async () => {
+      try {
+        const [pRes, sRes] = await Promise.all([
+          fetch("/api/portfolio"),
+          fetch("/api/scenarios"),
+        ]);
+        if (pRes.ok) {
+          const p = await pRes.json();
+          if (!cancelled) setBaseline(portfolioToItems(p));
+        }
+        if (sRes.ok) {
+          const sc = await sRes.json();
+          if (!cancelled && Array.isArray(sc)) setScenarios(sc);
+        }
+      } catch (e) {
+        console.error("Failed to load scenarios from API", e);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const save = useCallback((sc: Scenario[]) => {
     setScenarios(sc);
-    localStorage.setItem("lankawealth_scenarios", JSON.stringify(sc));
+    fetch("/api/scenarios", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sc),
+    }).catch((e) => console.error("Failed to save scenarios", e));
   }, []);
 
   const addScenario = (fromBaseline = false) => {

@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LankaWealth — Investment Dashboard
 
-## Getting Started
+Next.js app for tracking Sri Lankan passive-income investments (FD, Unit Trusts, Treasury, Dividends, PFCA).
 
-First, run the development server:
+## Stack
+
+- Next.js 16 + React 19
+- Neon Postgres (portfolio, snapshots, scenarios)
+- PIN login (single-user)
+- Rates still use localStorage / API scraping for market data
+
+## Setup
+
+### 1. Neon database
+
+1. Create a project at [neon.tech](https://neon.tech)
+2. Copy the connection string into `DATABASE_URL`
+3. Run [`scripts/schema.sql`](scripts/schema.sql) in the Neon SQL Editor
+
+### 2. Environment
+
+```bash
+cp .env.example .env.local
+```
+
+Fill in:
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Neon connection string |
+| `APP_PIN` | Login PIN |
+| `SESSION_SECRET` | Cookie signing secret (long random string) |
+
+Also set these in **Vercel → Project → Environment Variables** for production.
+
+### 3. Install & run
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) and unlock with your PIN.
+
+## Migrating existing browser data
+
+Your old data lives in **this browser’s localStorage**. Neon does not see it until you import.
+
+1. On My Portfolio, click **Export** — downloads a JSON backup (portfolio + snapshots; includes local scenarios if still present)
+2. Or build the file yourself from DevTools → Application → Local Storage keys:
+   - `lankawealth_portfolio`
+   - `lankawealth_portfolio_snapshots`
+   - `lankawealth_scenarios`
+3. After PIN login on the Neon-backed app, click **Import** and choose the JSON
+4. Leave **Replace cloud data on import** unchecked to only fill empty Neon slots; check it to overwrite
+
+## Scripts
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm start
+npm run lint
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

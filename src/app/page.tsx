@@ -75,16 +75,20 @@ export default function Dashboard() {
   const [portfolio, setPortfolio] = useState<PortfolioState | null>(null);
   const [incomePeriod, setIncomePeriod] = useState<"monthly" | "annual">("monthly");
 
-  // Load from local storage
+  // Load portfolio from Neon API
   useEffect(() => {
-    const saved = localStorage.getItem("lankawealth_portfolio");
-    if (saved) {
+    let cancelled = false;
+    (async () => {
       try {
-        setPortfolio(JSON.parse(saved));
+        const res = await fetch("/api/portfolio");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setPortfolio(data);
       } catch (e) {
-        console.error("Failed to parse portfolio", e);
+        console.error("Failed to load portfolio", e);
       }
-    }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const assetSummaries = [
