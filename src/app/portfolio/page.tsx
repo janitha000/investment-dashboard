@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRates } from "@/context/RatesContext";
 import { calcProgressiveIit, PERSONAL_RELIEF } from "@/lib/tax";
-import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe } from "lucide-react";
+import { Landmark, Compass, Wallet, Plus, Trash2, Info, Briefcase, Percent, ShieldCheck, LineChart, Globe, Camera, Clock } from "lucide-react";
 
 interface FdInvestment {
   id: string;
@@ -65,6 +65,35 @@ interface PortfolioState {
   dividends: DividendInvestment[];
   pfcaFds: PfcaFdInvestment[];
 }
+
+/** Point-in-time capture of the full portfolio for history / charting */
+interface PortfolioSnapshot {
+  id: string;
+  timestamp: string; // ISO
+  label?: string;
+  portfolio: PortfolioState;
+  totals: {
+    invested: number;
+    investedByCategory: {
+      fds: number;
+      uts: number;
+      treasury: number;
+      dividends: number;
+      pfcaFds: number;
+    };
+    gross: number;
+    netWht: number;
+    netIit: number;
+    iitPayable: number;
+    physicalCash: number;
+    usdCapitalGain: number;
+    coreYield: number;
+    taxFreeYield: number;
+    combinedYield: number;
+  };
+}
+
+const SNAPSHOTS_KEY = "lankawealth_portfolio_snapshots";
 
 const INITIAL_STATE: PortfolioState = {
   fds: [],
@@ -131,6 +160,9 @@ export default function PortfolioPage() {
   const [pfcaMaturity, setPfcaMaturity] = useState<"monthly" | "quarterly" | "maturity">("maturity");
   const [pfcaFx, setPfcaFx] = useState<string>("310");
   const [pfcaDepreciation, setPfcaDepreciation] = useState<string>("5");
+  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
+  const [snapshotFlash, setSnapshotFlash] = useState<string | null>(null);
+  const [showSnapshots, setShowSnapshots] = useState(false);
 
   // Load from local storage
   useEffect(() => {
@@ -147,6 +179,15 @@ export default function PortfolioPage() {
         });
       } catch (e) {
         console.error("Failed to parse portfolio", e);
+      }
+    }
+    const snapSaved = localStorage.getItem(SNAPSHOTS_KEY);
+    if (snapSaved) {
+      try {
+        const parsed = JSON.parse(snapSaved);
+        if (Array.isArray(parsed)) setSnapshots(parsed);
+      } catch (e) {
+        console.error("Failed to parse snapshots", e);
       }
     }
   }, []);
@@ -572,6 +613,66 @@ export default function PortfolioPage() {
   const iitShare = (categoryGross: number) =>
     iitAssessableIncome > 0 ? iit.balancePayable * (categoryGross / iitAssessableIncome) : 0;
 
+  const persistSnapshots = (next: PortfolioSnapshot[]) => {
+    setSnapshots(next);
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(next));
+  };
+
+  const handleSaveSnapshot = () => {
+    if (grandTotalInvested <= 0) {
+      setSnapshotFlash("Add holdings before saving a snapshot");
+      setTimeout(() => setSnapshotFlash(null), 2500);
+      return;
+    }
+    const snap: PortfolioSnapshot = {
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      portfolio: JSON.parse(JSON.stringify(portfolio)) as PortfolioState,
+      totals: {
+        invested: grandTotalInvested,
+        investedByCategory: {
+          fds: fdTotals.invested,
+          uts: utTotals.invested,
+          treasury: treasuryTotals.invested,
+          dividends: dividendTotals.invested,
+          pfcaFds: pfcaTotals.invested,
+        },
+        gross: grandTotalGross,
+        netWht: grandTotalNetWht,
+        netIit: grandTotalNetIit,
+        iitPayable: iit.balancePayable,
+        physicalCash: physicalCashAvailable,
+        usdCapitalGain,
+        coreYield,
+        taxFreeYield,
+        combinedYield,
+      },
+    };
+    const next = [snap, ...snapshots];
+    persistSnapshots(next);
+    setShowSnapshots(true);
+    setSnapshotFlash("Snapshot saved");
+    setTimeout(() => setSnapshotFlash(null), 2500);
+  };
+
+  const handleDeleteSnapshot = (id: string) => {
+    persistSnapshots(snapshots.filter(s => s.id !== id));
+  };
+
+  const formatSnapTime = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString("en-LK", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return iso;
+    }
+  };
+
   // Preset rates autocomplete when forms load
   useEffect(() => {
     if (activeTab === "fds" && rates?.fixedDeposit?.bankAverage12m) {
@@ -642,19 +743,45 @@ export default function PortfolioPage() {
             )}
           </div>
 
-          <div className="income-period-tabs">
-            <button 
-              className={`period-tab-btn ${incomePeriod === "monthly" ? "active" : ""}`}
-              onClick={() => setIncomePeriod("monthly")}
-            >
-              Monthly Income
-            </button>
-            <button 
-              className={`period-tab-btn ${incomePeriod === "annual" ? "active" : ""}`}
-              onClick={() => setIncomePeriod("annual")}
-            >
-              Annual Income
-            </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "10px" }}>
+            <div className="income-period-tabs">
+              <button 
+                className={`period-tab-btn ${incomePeriod === "monthly" ? "active" : ""}`}
+                onClick={() => setIncomePeriod("monthly")}
+              >
+                Monthly Income
+              </button>
+              <button 
+                className={`period-tab-btn ${incomePeriod === "annual" ? "active" : ""}`}
+                onClick={() => setIncomePeriod("annual")}
+              >
+                Annual Income
+              </button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="snapshot-btn"
+                onClick={handleSaveSnapshot}
+                title="Save a timestamped copy of the full portfolio for history and charts"
+              >
+                <Camera size={14} />
+                Save Snapshot
+              </button>
+              {snapshots.length > 0 && (
+                <button
+                  type="button"
+                  className="snapshot-history-btn"
+                  onClick={() => setShowSnapshots(v => !v)}
+                >
+                  <Clock size={14} />
+                  {snapshots.length} saved
+                </button>
+              )}
+            </div>
+            {snapshotFlash && (
+              <span className="snapshot-flash">{snapshotFlash}</span>
+            )}
           </div>
         </div>
 
@@ -751,6 +878,49 @@ export default function PortfolioPage() {
           </div>
         )}
       </div>
+
+      {showSnapshots && snapshots.length > 0 && (
+        <div className="glass-card snapshots-panel animate-fade-in">
+          <div className="snapshots-hdr">
+            <div>
+              <h4 className="snapshots-title"><Camera size={16} /> Portfolio Snapshots</h4>
+              <p className="snapshots-sub">Timestamped captures of holdings and totals — ready for charts and history.</p>
+            </div>
+            <button type="button" className="snapshot-history-btn" onClick={() => setShowSnapshots(false)}>Hide</button>
+          </div>
+          <div className="snapshots-list">
+            {snapshots.map(snap => (
+              <div key={snap.id} className="snapshot-row">
+                <div className="snapshot-meta">
+                  <span className="snapshot-time">{formatSnapTime(snap.timestamp)}</span>
+                  <span className="snapshot-invested">{formatLKR(snap.totals.invested)}</span>
+                </div>
+                <div className="snapshot-metrics">
+                  <span>Gross {formatLKR(snap.totals.gross / 12)}/mo</span>
+                  <span>Net WHT {formatLKR(snap.totals.netWht / 12)}/mo</span>
+                  <span>Net IIT {formatLKR(snap.totals.netIit / 12)}/mo</span>
+                  <span>Yield {snap.totals.combinedYield.toFixed(2)}%</span>
+                </div>
+                <div className="snapshot-cats">
+                  <span>FD {formatLKR(snap.totals.investedByCategory.fds)}</span>
+                  <span>UT {formatLKR(snap.totals.investedByCategory.uts)}</span>
+                  <span>TR {formatLKR(snap.totals.investedByCategory.treasury)}</span>
+                  <span>Div {formatLKR(snap.totals.investedByCategory.dividends)}</span>
+                  <span>PFCA {formatLKR(snap.totals.investedByCategory.pfcaFds)}</span>
+                </div>
+                <button
+                  type="button"
+                  className="snapshot-del"
+                  onClick={() => handleDeleteSnapshot(snap.id)}
+                  title="Delete snapshot"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Category Wise Totals Cards */}
       <div className="category-totals-row">
@@ -2240,6 +2410,161 @@ export default function PortfolioPage() {
           background: var(--bg-secondary);
           color: var(--color-teal);
           box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        }
+
+        .snapshot-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(0, 242, 254, 0.28);
+          background: rgba(0, 242, 254, 0.08);
+          color: var(--color-teal);
+          font-size: 0.75rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .snapshot-btn:hover {
+          background: rgba(0, 242, 254, 0.16);
+          transform: translateY(-1px);
+        }
+
+        .snapshot-history-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 7px 12px;
+          border-radius: 8px;
+          border: 1px solid var(--border-color);
+          background: rgba(255, 255, 255, 0.03);
+          color: var(--text-secondary);
+          font-size: 0.75rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .snapshot-history-btn:hover {
+          color: var(--text-primary);
+          background: rgba(255, 255, 255, 0.06);
+        }
+
+        .snapshot-flash {
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: var(--color-emerald);
+        }
+
+        .snapshots-panel {
+          padding: 1.1rem 1.25rem;
+          margin-bottom: 1.25rem;
+        }
+
+        .snapshots-hdr {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 1rem;
+          margin-bottom: 0.9rem;
+        }
+
+        .snapshots-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin: 0;
+          font-size: 0.95rem;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .snapshots-sub {
+          margin: 4px 0 0;
+          font-size: 0.72rem;
+          color: var(--text-muted);
+        }
+
+        .snapshots-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .snapshot-row {
+          display: grid;
+          grid-template-columns: minmax(140px, 1.1fr) minmax(180px, 1.4fr) minmax(160px, 1.6fr) auto;
+          gap: 10px 14px;
+          align-items: center;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid var(--border-color);
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        @media (max-width: 900px) {
+          .snapshot-row {
+            grid-template-columns: 1fr auto;
+          }
+          .snapshot-metrics,
+          .snapshot-cats {
+            grid-column: 1 / -1;
+          }
+        }
+
+        .snapshot-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .snapshot-time {
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .snapshot-invested {
+          font-family: var(--font-display);
+          font-size: 0.92rem;
+          font-weight: 800;
+          color: var(--color-teal);
+        }
+
+        .snapshot-metrics,
+        .snapshot-cats {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px 10px;
+          font-size: 0.68rem;
+          font-weight: 600;
+          color: var(--text-secondary);
+        }
+
+        .snapshot-cats span {
+          padding: 2px 7px;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid var(--border-color);
+        }
+
+        .snapshot-del {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 30px;
+          border-radius: 8px;
+          border: none;
+          background: transparent;
+          color: var(--text-muted);
+          cursor: pointer;
+        }
+
+        .snapshot-del:hover {
+          color: #ef4444;
+          background: rgba(239, 68, 68, 0.1);
         }
 
         .portfolio-summary-bar {
