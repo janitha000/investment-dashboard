@@ -57,9 +57,8 @@ function calcReturns(item: ScenarioItem) {
   const interest = calcGross(item);
   const fxGain = calcPfcaFxGain(item);
   const gross = interest + fxGain;
-  // UT yields are quoted net of WHT; dividends and PFCA carry no WHT.
-  const noWht = item.category === "ut" || item.category === "dividend" || item.category === "pfca";
-  const wht = noWht ? 0 : interest * 0.10;
+  // Only LKR FDs withhold 10% WHT at source. UT yields are quoted net; Treasury / dividends / PFCA have no personal WHT.
+  const wht = item.category === "fd" ? interest * 0.10 : 0;
   const netWht = gross - wht;
   const iitLiable = item.category !== "dividend" && item.category !== "pfca";
   return { gross, interest, fxGain, wht, netWht, iitLiable };
@@ -100,7 +99,7 @@ function calcTotals(items: ScenarioItem[]) {
   let taxFreeInvested = 0, taxFreeGross = 0;
   let pfcaInvested = 0, usdCapitalGain = 0;
   let iitAssessable = 0; // FD + UT + Treasury annual income (IIT-liable)
-  let whtCredit = 0;     // WHT already deducted on IIT-liable income
+  let whtCredit = 0;     // WHT already withheld — FD only
   items.forEach(it => {
     const r = calcReturns(it);
     invested += it.amount;
@@ -108,6 +107,8 @@ function calcTotals(items: ScenarioItem[]) {
     netWht += r.netWht;
     if (r.iitLiable) {
       iitAssessable += r.interest;
+    }
+    if (it.category === "fd") {
       whtCredit += r.wht;
     }
     if (it.category === "dividend" || it.category === "pfca") {
@@ -510,12 +511,12 @@ export default function ScenariosPage() {
                           <span>Personal relief</span><strong>−{fmt(tot.iitRelief)}</strong>
                           <span>Taxable after relief</span><strong>{fmt(tot.iitTaxable)}</strong>
                           <span>Tax on slabs</span><strong>{fmt(tot.iitTaxGross)}</strong>
-                          <span>Less: WHT already paid</span><strong className="sc-em">−{fmt(tot.whtCredit)}</strong>
+                          <span>Less: WHT already paid (FD only)</span><strong className="sc-em">−{fmt(tot.whtCredit)}</strong>
                           <span>Balance IIT payable</span><strong style={{color:"#f87171"}}>{fmt(tot.iitTax)} /yr · {fmt(tot.iitTax/12)} /mo</strong>
                           <span>Effective rate on liable income</span><strong className="sc-pu">{pct(tot.effectiveIitRate)}</strong>
                           <span>Net after WHT + IIT</span><strong className="sc-pu">{fmt(tot.netIit)} /yr · {fmt(tot.netIit/12)} /mo</strong>
                         </div>
-                        <div className="sc-iit-slabs">Slabs after relief: first 1M @ 6% · next 0.5M @ 18% · next 0.5M @ 24% · next 0.5M @ 30% · balance @ 36%. Dividends &amp; PFCA excluded. WHT withheld on FD/Treasury is credited against the slab tax; UT yields are quoted net at fund level so carry no personal credit.</div>
+                        <div className="sc-iit-slabs">Slabs after relief: first 1M @ 6% · next 0.5M @ 18% · next 0.5M @ 24% · next 0.5M @ 30% · balance @ 36%. Dividends &amp; PFCA excluded. Only FD withholds 10% WHT at source (credited against the slab tax); Treasury has no WHT; UT yields are quoted net at fund level so carry no personal credit.</div>
                       </div>
                     )}
                     <div className="sc-addform">

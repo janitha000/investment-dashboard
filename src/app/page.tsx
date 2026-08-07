@@ -204,15 +204,14 @@ export default function Dashboard() {
     let trInvested = 0;
     let trGross = 0;
     let trNetWht = 0;
-    let trWht = 0;
+    const trWht = 0;
 
     (portfolio.treasury || []).forEach(item => {
+      // No WHT at Treasury level — only FDs withhold at source
       const gross = item.amount * (item.rate / 100);
-      const tax = gross * 0.10;
       trInvested += item.amount;
       trGross += gross;
-      trNetWht += (gross - tax);
-      trWht += tax;
+      trNetWht += gross;
     });
 
     let divInvested = 0;
@@ -239,8 +238,8 @@ export default function Dashboard() {
     const grandGross = fdGross + utGross + trGross + divGross + pfcaGross;
     const grandNetWht = fdNetWht + utNetWht + trNetWht + divGross + pfcaGross;
     const grandWht = fdWht + utWht + trWht;
-    // Progressive IIT on pooled FD + UT + Treasury income, crediting WHT already withheld
-    const iit = calcProgressiveIit(fdGross + utGross + trGross, fdWht + trWht);
+    // Progressive IIT on pooled FD + UT + Treasury income; only FD WHT is a credit
+    const iit = calcProgressiveIit(fdGross + utGross + trGross, fdWht);
     const grandNetIit = grandNetWht - iit.balancePayable;
 
     return {
@@ -515,7 +514,7 @@ export default function Dashboard() {
                   <td>Sovereign</td>
                   <td>100% Backed by CBSL</td>
                   <td>At Maturity (Discounted bond)</td>
-                  <td>10% WHT deducted at source</td>
+                  <td>No WHT at source; progressive IIT applies</td>
                 </tr>
                 <tr>
                   <td><strong>Unit Trust (Money Market)</strong></td>
@@ -531,7 +530,7 @@ export default function Dashboard() {
                   <td>Low</td>
                   <td>Regulated (insured up to LKR 1.1M)</td>
                   <td>Monthly, Quarterly, or Maturity payouts</td>
-                  <td>10% WHT deducted at source</td>
+                  <td>10% WHT deducted at source (IIT credit)</td>
                 </tr>
                 <tr>
                   <td><strong>Corporate Debentures</strong></td>

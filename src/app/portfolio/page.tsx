@@ -472,12 +472,13 @@ export default function PortfolioPage() {
   };
 
   const calculateTreasuryReturns = (item: TreasuryInvestment) => {
-    // For T-Bonds with known coupon value, use annualised coupon (bi-annual × 2)
+    // For T-Bonds with known coupon value, use annualised coupon (bi-annual × 2).
+    // No WHT at Treasury level — only FDs withhold 10% at source.
     const annualGross = item.couponValue
       ? item.couponValue * 2
       : item.amount * (item.rate / 100);
-    const wht = annualGross * 0.10;
-    const netWht = annualGross - wht;
+    const wht = 0;
+    const netWht = annualGross;
     const iit36 = annualGross * 0.36;
     const netIit = annualGross - iit36;
     // Next two coupon dates based on couponMonth
@@ -607,9 +608,9 @@ export default function PortfolioPage() {
   const grandTotalWht = fdTotals.whtDeducted + utTotals.whtDeducted + treasuryTotals.whtDeducted + dividendTotals.whtDeducted + pfcaTotals.whtDeducted;
 
   // Progressive IIT on the pooled annual income of all IIT-liable sources (FD + UT + Treasury).
-  // Dividends and PFCA are exempt. WHT withheld on FD/Treasury is credited against the slab tax.
+  // Dividends and PFCA are exempt. Only FD withholds 10% WHT at source — that credit offsets the slab tax.
   const iitAssessableIncome = fdTotals.gross + utTotals.gross + treasuryTotals.gross;
-  const iitWhtCredit = fdTotals.whtDeducted + treasuryTotals.whtDeducted;
+  const iitWhtCredit = fdTotals.whtDeducted;
   const iit = calcProgressiveIit(iitAssessableIncome, iitWhtCredit);
   const grandTotalNetIit = grandTotalNetWht - iit.balancePayable;
 
@@ -1059,7 +1060,7 @@ export default function PortfolioPage() {
                 <strong>{formatLKR(iit.slabTax)}</strong>
               </div>
               <div className="iit-bd-row">
-                <span>Less: WHT already paid (FD + Treasury)</span>
+                <span>Less: WHT already paid (FD only)</span>
                 <strong className="text-emerald">−{formatLKR(iit.whtCredit)}</strong>
               </div>
               <div className="iit-bd-row total">
@@ -1075,7 +1076,7 @@ export default function PortfolioPage() {
             </div>
             <p className="iit-bd-note">
               Relief of {formatLKR(PERSONAL_RELIEF)} then 6% / 18% / 24% / 30% / 36% slabs, applied once to total
-              income — not per category. Dividends and PFCA are exempt and excluded from the pool.
+              income — not per category. Only FD withholds 10% WHT at source (credited here). Dividends and PFCA are exempt and excluded from the pool.
             </p>
           </div>
         )}
@@ -1227,7 +1228,7 @@ export default function PortfolioPage() {
               <span className="val-text">{formatLKR(incomePeriod === "monthly" ? treasuryTotals.gross / 12 : treasuryTotals.gross)}</span>
             </div>
             <div className="metric-item">
-              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (WHT):</span>
+              <span>Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (No WHT):</span>
               <span className="val-text text-emerald">{formatLKR(incomePeriod === "monthly" ? treasuryTotals.netWht / 12 : treasuryTotals.netWht)}</span>
             </div>
             <div className="metric-item">
@@ -2014,7 +2015,7 @@ export default function PortfolioPage() {
                                 <tr>
                                   <th>Period</th>
                                   <th>Gross Coupon</th>
-                                  <th>Net (After 10% WHT)</th>
+                                  <th>Net (No WHT)</th>
                                   <th>Net (Prog. IIT share)</th>
                                 </tr>
                               </thead>
@@ -2022,7 +2023,7 @@ export default function PortfolioPage() {
                                 <tr>
                                   <td className="period-col">Per Coupon</td>
                                   <td>{item.couponValue ? formatLKR(item.couponValue) : "—"}</td>
-                                  <td className="text-emerald">{item.couponValue ? formatLKR(item.couponValue * 0.9) : "—"}</td>
+                                  <td className="text-emerald">{item.couponValue ? formatLKR(item.couponValue) : "—"}</td>
                                   <td style={{ color: "#d8b4fe" }}>{item.couponValue ? formatLKR((res.netWht - iitShare(res.annualGross)) / 2) : "—"}</td>
                                 </tr>
                                 <tr>
