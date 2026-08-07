@@ -33,3 +33,13 @@ CREATE TABLE IF NOT EXISTS scenarios (
 INSERT INTO scenarios (id, data)
 VALUES (1, '[]'::jsonb)
 ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS target_state (
+  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO target_state (id, data)
+VALUES (1, '{}'::jsonb)
+ON CONFLICT (id) DO NOTHING;

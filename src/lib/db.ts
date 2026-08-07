@@ -53,6 +53,18 @@ export async function ensureSchema(): Promise<void> {
         VALUES (1, '[]'::jsonb)
         ON CONFLICT (id) DO NOTHING
       `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS target_state (
+          id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+          data JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await sql`
+        INSERT INTO target_state (id, data)
+        VALUES (1, '{}'::jsonb)
+        ON CONFLICT (id) DO NOTHING
+      `;
     })().catch((err) => {
       schemaReady = null; // allow retry on next request
       throw err;
@@ -204,4 +216,78 @@ export async function snapshotCount(): Promise<number> {
   const sql = await sqlReady();
   const rows = await sql`SELECT COUNT(*)::int AS c FROM portfolio_snapshots`;
   return Number(rows[0]?.c ?? 0);
+}
+
+export type CategoryCapitalPlan = {
+  fds: number;
+  uts: number;
+  treasury: number;
+  dividends: number;
+  pfcaFds: number;
+};
+
+export type TargetPlan = {
+  generatedAt: string;
+  source: "gemini" | "heuristic";
+  summary: string;
+  steps: string[];
+  assumptions: string[];
+  monthlyContributionNeeded: number;
+  additionalCapitalByCategory: CategoryCapitalPlan;
+  expectedMonthlyLift: {
+    netWht: number;
+    netIit: number;
+    physicalCash: number;
+  };
+};
+
+export type TargetData = {
+  netMonthlyWht: number;
+  netMonthlyIit: number;
+  physicalCashMonthly: number;
+  monthsToTarget: number;
+  setAt?: string | null;
+  plan?: TargetPlan | null;
+};
+
+export const EMPTY_TARGET: TargetData = {
+  netMonthlyWht: 0,
+  netMonthlyIit: 0,
+  physicalCashMonthly: 0,
+  monthsToTarget: 12,
+  setAt: null,
+  plan: null,
+};
+
+export async function getTarget(): Promise<TargetData> {
+  const sql = await sqlReady();
+  const rows = await sql`SELECT data FROM target_state WHERE id = 1`;
+  if (!rows.length) return { ...EMPTY_TARGET };
+  const data = (rows[0].data || {}) as Partial<TargetData>;
+  return {
+    netMonthlyWht: Number(data.netMonthlyWht) || 0,
+    netMonthlyIit: Number(data.netMonthlyIit) || 0,
+    physicalCashMonthly: Number(data.physicalCashMonthly) || 0,
+    monthsToTarget: Math.max(1, Number(data.monthsToTarget) || 12),
+    setAt: data.setAt ?? null,
+    plan: data.plan ?? null,
+  };
+}
+
+export async function saveTarget(data: TargetData): Promise<void> {
+  const sql = await sqlReady();
+  const payload: TargetData = {
+    netMonthlyWht: Math.max(0, Number(data.netMonthlyWht) || 0),
+    netMonthlyIit: Math.max(0, Number(data.netMonthlyIit) || 0),
+    physicalCashMonthly: Math.max(0, Number(data.physicalCashMonthly) || 0),
+    monthsToTarget: Math.max(1, Math.round(Number(data.monthsToTarget) || 12)),
+    setAt: data.setAt ?? new Date().toISOString(),
+    plan: data.plan ?? null,
+  };
+  await sql`
+    INSERT INTO target_state (id, data, updated_at)
+    VALUES (1, ${jsonParam(payload)}::jsonb, NOW())
+    ON CONFLICT (id) DO UPDATE
+    SET data = EXCLUDED.data, updated_at = NOW()
+  `;
 }
