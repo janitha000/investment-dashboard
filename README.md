@@ -45,15 +45,17 @@ Open [http://localhost:3000](http://localhost:3000) and unlock with your PIN.
 
 ## Migrating existing browser data
 
-Your old data lives in **this browser’s localStorage**. Neon does not see it until you import.
+After you unlock with your PIN, the app **automatically** reads localStorage and uploads to Neon when cloud slots are empty:
 
-1. On My Portfolio, click **Export** — downloads a JSON backup (portfolio + snapshots; includes local scenarios if still present)
-2. Or build the file yourself from DevTools → Application → Local Storage keys:
-   - `lankawealth_portfolio`
-   - `lankawealth_portfolio_snapshots`
-   - `lankawealth_scenarios`
-3. After PIN login on the Neon-backed app, click **Import** and choose the JSON
-4. Leave **Replace cloud data on import** unchecked to only fill empty Neon slots; check it to overwrite
+- `lankawealth_portfolio`
+- `lankawealth_portfolio_snapshots`
+- `lankawealth_scenarios`
+
+You’ll see a short “Migrating local data to cloud…” screen, then a toast if anything was uploaded. Migrated local keys are then cleared.
+
+**Export** on My Portfolio still downloads a JSON backup. **Import** remains available if you need to restore/replace from a file (check “Replace cloud data on import” to overwrite).
+
+To force another local→cloud attempt, clear `lankawealth_migrated_to_neon` from DevTools → Application → Local Storage.
 
 ## Scripts
 

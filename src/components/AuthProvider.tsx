@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Lock, LogOut } from "lucide-react";
+import { migrateLocalStorageToNeon } from "@/lib/migrateLocalToNeon";
 
 type AuthContextValue = {
   authenticated: boolean;
@@ -22,6 +23,8 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [migrateMsg, setMigrateMsg] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -41,6 +44,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // After unlock: push any existing localStorage portfolio/scenarios/snapshots into Neon
+  useEffect(() => {
+    if (!authenticated) return;
+    let cancelled = false;
+    setSyncing(true);
+    (async () => {
+      try {
+        const result = await migrateLocalStorageToNeon();
+        if (!cancelled && result.message) {
+          setMigrateMsg(result.message);
+          window.setTimeout(() => setMigrateMsg(null), 5000);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setMigrateMsg(e instanceof Error ? e.message : "Local data migration failed");
+          window.setTimeout(() => setMigrateMsg(null), 6000);
+        }
+      } finally {
+        if (!cancelled) setSyncing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated]);
 
   const login = useCallback(async (pinValue: string) => {
     setSubmitting(true);
@@ -69,10 +98,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthenticated(false);
   }, []);
 
-  if (loading) {
+  if (loading || (authenticated && syncing)) {
     return (
       <div className="auth-gate-loading">
-        <span>Loading…</span>
+        <span>{authenticated && syncing ? "Migrating local data to cloud…" : "Loading…"}</span>
         <style jsx>{`
           .auth-gate-loading {
             min-height: 60vh;
@@ -197,6 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           <LogOut size={14} />
           Lock
         </button>
+        {migrateMsg && <div className="migrate-toast">{migrateMsg}</div>}
         {children}
       </div>
       <style jsx>{`
@@ -223,6 +253,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .auth-logout:hover {
           color: var(--text-primary);
           border-color: rgba(248, 113, 113, 0.4);
+        }
+        .migrate-toast {
+          position: fixed;
+          top: 52px;
+          right: 18px;
+          z-index: 50;
+          max-width: 320px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(16, 185, 129, 0.35);
+          background: rgba(16, 185, 129, 0.12);
+          color: var(--color-emerald);
+          font-size: 0.75rem;
+          font-weight: 700;
         }
       `}</style>
     </AuthContext.Provider>
