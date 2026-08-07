@@ -885,92 +885,98 @@ export default function PortfolioPage() {
             )}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "10px" }}>
-            <div className="income-period-tabs">
-              <button 
-                className={`period-tab-btn ${incomePeriod === "monthly" ? "active" : ""}`}
-                onClick={() => setIncomePeriod("monthly")}
-              >
-                Monthly Income
-              </button>
-              <button 
-                className={`period-tab-btn ${incomePeriod === "annual" ? "active" : ""}`}
-                onClick={() => setIncomePeriod("annual")}
-              >
-                Annual Income
-              </button>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                className="snapshot-btn"
-                onClick={handleSaveSnapshot}
-                title="Save a timestamped copy of the full portfolio for history and charts"
-              >
-                <Camera size={14} />
-                Save Snapshot
-              </button>
-              <button
-                type="button"
-                className="snapshot-history-btn"
-                onClick={handleExportBackup}
-                title="Download portfolio + snapshots (+ local scenarios if present) as JSON"
-              >
-                <Download size={14} />
-                Export
-              </button>
-              <button
-                type="button"
-                className="snapshot-history-btn"
-                onClick={() => importInputRef.current?.click()}
-                title="Import a previously exported JSON backup into Neon"
-              >
-                <Upload size={14} />
-                Import
-              </button>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept="application/json,.json"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleImportFile(f);
-                  e.target.value = "";
-                }}
-              />
-              {localData.any && (
-                <button
-                  type="button"
-                  className="snapshot-btn migrate"
-                  onClick={handleMigrateLocalData}
-                  disabled={migrating}
-                  title="Read this browser's saved data and upload it to Neon"
-                >
-                  <UploadCloud size={14} />
-                  {migrating
-                    ? "Migrating…"
-                    : `Migrate Local Data (${[
-                        localData.holdings ? `${localData.holdings} holdings` : null,
-                        localData.snapshots ? `${localData.snapshots} snaps` : null,
-                        localData.scenarios ? `${localData.scenarios} scenarios` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(", ")})`}
-                </button>
+          <div className="income-period-tabs">
+            <button
+              className={`period-tab-btn ${incomePeriod === "monthly" ? "active" : ""}`}
+              onClick={() => setIncomePeriod("monthly")}
+            >
+              Monthly Income
+            </button>
+            <button
+              className={`period-tab-btn ${incomePeriod === "annual" ? "active" : ""}`}
+              onClick={() => setIncomePeriod("annual")}
+            >
+              Annual Income
+            </button>
+          </div>
+        </div>
+
+        <div className="overview-toolbar">
+          <button
+            type="button"
+            className="snapshot-btn"
+            onClick={handleSaveSnapshot}
+            title="Save a timestamped copy of the full portfolio for history and charts"
+          >
+            <Camera size={14} />
+            Save Snapshot
+          </button>
+          <button
+            type="button"
+            className="snapshot-history-btn"
+            onClick={handleExportBackup}
+            title="Download portfolio + snapshots (+ local scenarios if present) as JSON"
+          >
+            <Download size={14} />
+            Export
+          </button>
+          <button
+            type="button"
+            className="snapshot-history-btn"
+            onClick={() => importInputRef.current?.click()}
+            title="Import a previously exported JSON backup into Neon"
+          >
+            <Upload size={14} />
+            Import
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleImportFile(f);
+              e.target.value = "";
+            }}
+          />
+          {localData.any && (
+            <button
+              type="button"
+              className="snapshot-btn migrate"
+              onClick={handleMigrateLocalData}
+              disabled={migrating}
+              title="Read this browser's saved data and upload it to Neon"
+            >
+              <UploadCloud size={14} />
+              {migrating ? "Migrating…" : "Migrate Local Data"}
+              {!migrating && (
+                <span className="migrate-count">
+                  {[
+                    localData.holdings ? `${localData.holdings} holdings` : null,
+                    localData.snapshots ? `${localData.snapshots} snaps` : null,
+                    localData.scenarios ? `${localData.scenarios} scenarios` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
               )}
-              {snapshots.length > 0 && (
-                <button
-                  type="button"
-                  className="snapshot-history-btn"
-                  onClick={() => setShowSnapshots(v => !v)}
-                >
-                  <Clock size={14} />
-                  {snapshots.length} saved
-                </button>
-              )}
-            </div>
-              <label className="import-replace-lbl">
+            </button>
+          )}
+          {snapshots.length > 0 && (
+            <button
+              type="button"
+              className="snapshot-history-btn"
+              onClick={() => setShowSnapshots(v => !v)}
+            >
+              <Clock size={14} />
+              {snapshots.length} saved
+            </button>
+          )}
+
+          <div className="overview-toolbar-end">
+            {snapshotFlash && <span className="snapshot-flash">{snapshotFlash}</span>}
+            <label className="import-replace-lbl">
               <input
                 type="checkbox"
                 checked={replaceOnImport}
@@ -978,13 +984,10 @@ export default function PortfolioPage() {
               />
               Replace cloud data on migrate / import
             </label>
-            {snapshotFlash && (
-              <span className="snapshot-flash">{snapshotFlash}</span>
-            )}
           </div>
         </div>
 
-        <div className="divider-h" style={{ margin: "1.25rem 0" }} />
+        <div className="divider-h" style={{ margin: "1.1rem 0" }} />
 
         <div className="portfolio-summary-bar">
           <div className="summary-col">
@@ -2495,7 +2498,7 @@ export default function PortfolioPage() {
         .portfolio-overview-header {
           display: flex;
           justify-content: space-between;
-          align-items: center;
+          align-items: flex-start;
           flex-wrap: wrap;
           gap: 1rem;
         }
@@ -2504,6 +2507,31 @@ export default function PortfolioPage() {
           display: flex;
           flex-direction: column;
           gap: 4px;
+          flex: 1 1 260px;
+          min-width: 0;
+        }
+
+        .overview-toolbar {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 1.1rem;
+        }
+
+        .overview-toolbar-end {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-left: auto;
+        }
+
+        @media (max-width: 720px) {
+          .overview-toolbar-end {
+            margin-left: 0;
+            width: 100%;
+          }
         }
 
         .split-yield-row {
@@ -2586,6 +2614,7 @@ export default function PortfolioPage() {
           border-radius: 8px;
           padding: 2px;
           gap: 2px;
+          flex: 0 0 auto;
         }
 
         .period-tab-btn {
@@ -2639,6 +2668,15 @@ export default function PortfolioPage() {
 
         .snapshot-btn.migrate:hover {
           background: rgba(251, 191, 36, 0.2);
+        }
+
+        .migrate-count {
+          padding: 2px 6px;
+          border-radius: 5px;
+          background: rgba(251, 191, 36, 0.18);
+          font-size: 0.65rem;
+          font-weight: 700;
+          white-space: nowrap;
         }
 
         .snapshot-btn:disabled {
