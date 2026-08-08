@@ -138,10 +138,29 @@ function PctTooltip({ active, payload, label }: {
   );
 }
 
+const INCOME_METRICS = [
+  { id: "physicalCash", label: "Physical Cash", field: "physicalCashMonthly", color: "#fbbf24" },
+  { id: "netIit", label: "Net after IIT", field: "netIitMonthly", color: "#d8b4fe" },
+  { id: "netWht", label: "Net after WHT", field: "netWhtMonthly", color: "#10b981" },
+  { id: "gross", label: "Gross", field: "grossMonthly", color: "#00f2fe" },
+] as const;
+
+type MetricId = (typeof INCOME_METRICS)[number]["id"];
+
+const CAPITAL_CATEGORIES = [
+  { key: "fds" as const, label: "Fixed Deposits", color: "#00f2fe" },
+  { key: "uts" as const, label: "Unit Trusts", color: "#10b981" },
+  { key: "treasury" as const, label: "Treasury", color: "#818cf8" },
+  { key: "dividends" as const, label: "Dividends", color: "#6366f1" },
+  { key: "pfcaFds" as const, label: "PFCA FDs", color: "#f43f5e" },
+];
+
 export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [horizon, setHorizon] = useState(2);
+  const [metric, setMetric] = useState<MetricId>("physicalCash");
 
   useEffect(() => {
     let cancelled = false;
@@ -240,6 +259,65 @@ export default function HistoryPage() {
 
   const latest = chartData[chartData.length - 1];
   const first = chartData[0];
+
+  const metricMeta = INCOME_METRICS.find((m) => m.id === metric) || INCOME_METRICS[0];
+
+  /**
+   * Forward-looking purchasing-power plan.
+   * Required capital to keep real income flat grows at exactly the inflation rate,
+   * so the minimum annual reinvestment is inflation × current capital.
+   */
+  const projection = useMemo(() => {
+    const baseMonthly = latest ? Number(latest[metricMeta.field]) || 0 : 0;
+    const capital = latest?.invested || 0;
+    const annualIncome = baseMonthly * 12;
+    const netYield = capital > 0 ? annualIncome / capital : 0;
+    const reinvestFraction = netYield > 0 ? INFLATION_RATE / netYield : 0;
+    const minMonthlyReinvest = (capital * INFLATION_RATE) / 12;
+    const spendableAfter = baseMonthly - minMonthlyReinvest;
+    const factor = Math.pow(1 + INFLATION_RATE, horizon);
+
+    const points = Array.from({ length: horizon + 1 }, (_, t) => {
+      const infl = Math.pow(1 + INFLATION_RATE, t);
+      return {
+        name: t === 0 ? "Now" : `Year ${t}`,
+        target: baseMonthly * infl,
+        flatNominal: baseMonthly,
+        realIfFlat: baseMonthly / infl,
+        shortfall: baseMonthly * infl - baseMonthly,
+        requiredCapital: capital * infl,
+        additionalCapital: capital * (infl - 1),
+      };
+    });
+
+    const categories = CAPITAL_CATEGORIES.map((c) => {
+      const held = latest ? Number(latest[c.key]) || 0 : 0;
+      return {
+        name: c.label,
+        color: c.color,
+        current: held,
+        additional: held * (factor - 1),
+        required: held * factor,
+        monthlyTopUp: (held * (factor - 1)) / (horizon * 12),
+      };
+    });
+
+    return {
+      baseMonthly,
+      capital,
+      netYield: netYield * 100,
+      reinvestFraction: reinvestFraction * 100,
+      minMonthlyReinvest,
+      spendableAfter,
+      canBeatInflation: netYield > INFLATION_RATE,
+      requiredCapitalAtHorizon: capital * factor,
+      additionalCapitalAtHorizon: capital * (factor - 1),
+      targetAtHorizon: baseMonthly * factor,
+      erodedAtHorizon: baseMonthly / factor,
+      points,
+      categories,
+    };
+  }, [latest, metricMeta.field, horizon]);
 
   if (loading) {
     return (
@@ -504,6 +582,209 @@ export default function HistoryPage() {
               </p>
             )}
           </div>
+
+          {/* Forward-looking inflation planner */}
+          <div className="glass-card hist-chart-card hist-plan-card">
+            <div className="hist-chart-hdr">
+              <div>
+                <h3>Beat inflation — {horizon}-year plan</h3>
+                <p>
+                  FD and UT income is fixed in nominal terms, so purchasing power erodes at{" "}
+                  {(INFLATION_RATE * 100).toFixed(0)}% a year. This shows the income you must reach
+                  and the minimum you need to reinvest to stay level in real terms.
+                </p>
+              </div>
+            </div>
+
+            <div className="hist-plan-controls">
+              <div className="hist-toggle-group">
+                <span className="hist-toggle-lbl">Horizon</span>
+                <div className="hist-toggle">
+                  {[1, 2, 3, 4, 5].map((y) => (
+                    <button
+                      key={y}
+                      type="button"
+                      className={horizon === y ? "active" : ""}
+                      onClick={() => setHorizon(y)}
+                    >
+                      {y}Y
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="hist-toggle-group">
+                <span className="hist-toggle-lbl">Income basis</span>
+                <div className="hist-toggle">
+                  {INCOME_METRICS.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={metric === m.id ? "active" : ""}
+                      onClick={() => setMetric(m.id)}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="hist-plan-kpis">
+              <div>
+                <span>Today ({metricMeta.label})</span>
+                <strong style={{ color: metricMeta.color }}>
+                  {formatLKR(projection.baseMonthly)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Needed in {horizon}Y to stay level</span>
+                <strong className="text-coral">{formatLKR(projection.targetAtHorizon)}/mo</strong>
+              </div>
+              <div>
+                <span>Min. reinvestment</span>
+                <strong className="text-gold">
+                  {formatLKR(projection.minMonthlyReinvest)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Reinvest share of income</span>
+                <strong className="text-gold">
+                  {projection.reinvestFraction > 0
+                    ? `${projection.reinvestFraction.toFixed(0)}%`
+                    : "—"}
+                </strong>
+              </div>
+              <div>
+                <span>Truly spendable now</span>
+                <strong className={projection.spendableAfter >= 0 ? "text-emerald" : "text-coral"}>
+                  {formatLKR(projection.spendableAfter)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Extra capital by {horizon}Y</span>
+                <strong className="text-teal">
+                  {formatLKR(projection.additionalCapitalAtHorizon)}
+                </strong>
+              </div>
+            </div>
+
+            {projection.capital > 0 && (
+              <div
+                className={`hist-plan-verdict ${projection.canBeatInflation ? "ok" : "warn"}`}
+              >
+                {projection.canBeatInflation ? (
+                  <>
+                    Net yield on capital is {projection.netYield.toFixed(2)}% vs{" "}
+                    {(INFLATION_RATE * 100).toFixed(0)}% inflation. Reinvest about{" "}
+                    {formatLKR(projection.minMonthlyReinvest)}/mo (
+                    {projection.reinvestFraction.toFixed(0)}% of this income) and keep{" "}
+                    {formatLKR(projection.spendableAfter)}/mo to spend — that holds your purchasing
+                    power flat. Anything reinvested above this grows it.
+                  </>
+                ) : (
+                  <>
+                    Net yield on capital is only {projection.netYield.toFixed(2)}%, below{" "}
+                    {(INFLATION_RATE * 100).toFixed(0)}% inflation. Reinvesting income alone cannot
+                    keep pace — you need fresh capital from outside the portfolio or a
+                    higher-yielding mix.
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="hist-chart-wrap">
+              <ResponsiveContainer width="100%" height={320}>
+                <ComposedChart
+                  data={projection.points}
+                  margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
+                >
+                  <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
+                  <Tooltip content={<LkrTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                  <Bar
+                    dataKey="shortfall"
+                    name="Extra income needed"
+                    fill="rgba(248, 113, 113, 0.35)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="target"
+                    name={`Target (${(INFLATION_RATE * 100).toFixed(0)}% inflation)`}
+                    stroke="#f87171"
+                    strokeWidth={2.5}
+                    dot={{ r: 3 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="flatNominal"
+                    name="If you never reinvest (nominal)"
+                    stroke={metricMeta.color}
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="realIfFlat"
+                    name="Purchasing power if you never reinvest"
+                    stroke="#9ca3af"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="hist-plan-sub">
+              <h4>Minimum top-up by category over {horizon} year{horizon > 1 ? "s" : ""}</h4>
+              <p>
+                Each bucket must also grow {(INFLATION_RATE * 100).toFixed(0)}% a year. Held capital
+                plus the extra needed equals the {horizon}-year requirement.
+              </p>
+            </div>
+            <div className="hist-chart-wrap">
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={projection.categories}
+                  margin={{ top: 8, right: 12, left: 4, bottom: 24 }}
+                >
+                  <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} interval={0} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
+                  <Tooltip content={<LkrTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                  <Bar
+                    dataKey="current"
+                    name="Held today"
+                    stackId="cap"
+                    fill="rgba(0, 242, 254, 0.5)"
+                  />
+                  <Bar
+                    dataKey="additional"
+                    name={`Extra needed by ${horizon}Y`}
+                    stackId="cap"
+                    fill="rgba(248, 113, 113, 0.6)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="hist-cat-table">
+              {projection.categories.map((c) => (
+                <div key={c.name} className="hist-cat-row">
+                  <span className="dot" style={{ background: c.color }} />
+                  <span className="nm">{c.name}</span>
+                  <span className="v">Held {formatLKR(c.current)}</span>
+                  <span className="v need">Add {formatLKR(c.additional)}</span>
+                  <span className="v">{formatLKR(c.monthlyTopUp)}/mo</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </>
       )}
 
@@ -635,6 +916,188 @@ export default function HistoryPage() {
           font-size: 0.75rem;
           font-weight: 600;
           color: var(--text-muted);
+        }
+
+        .hist-plan-card {
+          border-color: rgba(248, 113, 113, 0.22);
+          background: linear-gradient(
+            135deg,
+            rgba(248, 113, 113, 0.04) 0%,
+            rgba(9, 14, 26, 0.4) 100%
+          );
+        }
+
+        .hist-plan-controls {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 1.25rem;
+          margin-bottom: 1rem;
+        }
+
+        .hist-toggle-group {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .hist-toggle-lbl {
+          font-size: 0.66rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--text-muted);
+        }
+
+        .hist-toggle {
+          display: inline-flex;
+          gap: 2px;
+          padding: 2px;
+          border-radius: 8px;
+          border: 1px solid var(--border-color);
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        .hist-toggle button {
+          border: none;
+          background: none;
+          padding: 0.4rem 0.75rem;
+          border-radius: 6px;
+          color: var(--text-secondary);
+          font-family: var(--font-body);
+          font-size: 0.72rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .hist-toggle button:hover {
+          color: var(--text-primary);
+          background: rgba(255, 255, 255, 0.05);
+        }
+
+        .hist-toggle button.active {
+          color: #04060c;
+          background: linear-gradient(135deg, var(--color-teal) 0%, var(--color-indigo) 100%);
+        }
+
+        .hist-plan-kpis {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 0.9rem;
+          padding: 0.9rem 0;
+          border-top: 1px solid var(--border-color);
+          border-bottom: 1px solid var(--border-color);
+          margin-bottom: 1rem;
+        }
+
+        @media (max-width: 1100px) {
+          .hist-plan-kpis {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 620px) {
+          .hist-plan-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        .hist-plan-kpis span {
+          display: block;
+          font-size: 0.63rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          color: var(--text-muted);
+          margin-bottom: 4px;
+        }
+
+        .hist-plan-kpis strong {
+          font-size: 0.92rem;
+          font-family: var(--font-display);
+        }
+
+        .hist-plan-verdict {
+          padding: 0.8rem 1rem;
+          border-radius: 8px;
+          font-size: 0.78rem;
+          font-weight: 600;
+          line-height: 1.5;
+          margin-bottom: 1rem;
+        }
+
+        .hist-plan-verdict.ok {
+          border: 1px solid rgba(16, 185, 129, 0.28);
+          background: rgba(16, 185, 129, 0.07);
+          color: var(--text-secondary);
+        }
+
+        .hist-plan-verdict.warn {
+          border: 1px solid rgba(248, 113, 113, 0.32);
+          background: rgba(248, 113, 113, 0.08);
+          color: #fca5a5;
+        }
+
+        .hist-plan-sub {
+          margin-top: 1.25rem;
+          padding-top: 1rem;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .hist-plan-sub h4 {
+          margin: 0;
+          font-size: 0.9rem;
+          color: var(--text-primary);
+        }
+
+        .hist-plan-sub p {
+          margin: 4px 0 0;
+          font-size: 0.75rem;
+          color: var(--text-muted);
+          font-weight: 600;
+        }
+
+        .hist-cat-table {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          margin-top: 0.5rem;
+        }
+
+        .hist-cat-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 7px 10px;
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.02);
+          font-size: 0.73rem;
+          font-weight: 600;
+          color: var(--text-secondary);
+          flex-wrap: wrap;
+        }
+
+        .hist-cat-row .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 2px;
+          flex-shrink: 0;
+        }
+
+        .hist-cat-row .nm {
+          min-width: 120px;
+          color: var(--text-primary);
+          font-weight: 700;
+        }
+
+        .hist-cat-row .v {
+          min-width: 130px;
+        }
+
+        .hist-cat-row .v.need {
+          color: #fca5a5;
+          font-weight: 700;
         }
       `}</style>
     </div>
