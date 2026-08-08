@@ -94,7 +94,7 @@ export default function Dashboard() {
   const assetSummaries = [
     {
       name: "Treasury Securities",
-      path: "/treasury",
+      path: "/instruments?tab=treasury",
       icon: Wallet,
       yield: `${rates.treasury.tb12m.toFixed(2)}%`,
       risk: "Sovereign (Risk-Free)",
@@ -105,7 +105,7 @@ export default function Dashboard() {
     },
     {
       name: "Unit Trusts",
-      path: "/unit-trusts",
+      path: "/instruments?tab=unit-trusts",
       icon: Compass,
       yield: `${rates.unitTrust.moneyMarketYield.toFixed(2)}%`,
       risk: "Low - Moderate",
@@ -116,7 +116,7 @@ export default function Dashboard() {
     },
     {
       name: "Fixed Deposits",
-      path: "/fixed-deposits",
+      path: "/instruments?tab=fixed-deposits",
       icon: Landmark,
       yield: `${rates.fixedDeposit.bankAverage12m.toFixed(2)}%`,
       risk: "Low (Bank Guaranteed)",
@@ -127,7 +127,7 @@ export default function Dashboard() {
     },
     {
       name: "Corporate Debentures",
-      path: "/corporate-debentures",
+      path: "/instruments?tab=corporate-debentures",
       icon: Coins,
       yield: `${rates.corporateDebenture.averageYield.toFixed(2)}%`,
       risk: "Moderate (Corporate Credit)",
@@ -138,7 +138,7 @@ export default function Dashboard() {
     },
     {
       name: "Stock Market (CSE)",
-      path: "/stock-market",
+      path: "/instruments?tab=stock-market",
       icon: LineChart,
       yield: `${rates.cse.averageDividendYield.toFixed(2)}%`,
       risk: "High Market Risk",
@@ -149,7 +149,7 @@ export default function Dashboard() {
     },
     {
       name: "Real Estate (Rental)",
-      path: "/real-estate",
+      path: "/instruments?tab=real-estate",
       icon: Home,
       yield: `${rates.realEstate.commercialYield.toFixed(2)}%`,
       risk: "Moderate - High",
@@ -160,7 +160,7 @@ export default function Dashboard() {
     },
     {
       name: "PFCA FD (USD)",
-      path: "/pfca-fds",
+      path: "/instruments?tab=pfca-fds",
       icon: Globe,
       yield: `${rates.pfcaFd.usdYield12m.toFixed(2)}%`,
       risk: "Low (LKR Currency Hedged)",

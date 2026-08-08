@@ -7,20 +7,14 @@ import { useRates } from "@/context/RatesContext";
 import RatesEditor from "./RatesEditor";
 import {
   TrendingUp,
-  Wallet,
-  Landmark,
-  Compass,
-  LineChart,
   Home,
   Menu,
   X,
   Sliders,
-  Settings,
   Briefcase,
-  Coins,
-  Globe,
   FlaskConical,
-  Target
+  Target,
+  Layers,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -34,13 +28,7 @@ export default function Sidebar() {
     { name: "My Portfolio", href: "/portfolio", icon: Briefcase },
     { name: "What-If Scenarios", href: "/scenarios", icon: FlaskConical },
     { name: "Income Target", href: "/target", icon: Target },
-    { name: "Fixed Deposits", href: "/fixed-deposits", icon: Landmark },
-    { name: "Unit Trusts", href: "/unit-trusts", icon: Compass },
-    { name: "Treasury Securities", href: "/treasury", icon: Wallet },
-    { name: "Corporate Debentures", href: "/corporate-debentures", icon: Coins },
-    { name: "Stock Market (CSE)", href: "/stock-market", icon: LineChart },
-    { name: "Real Estate", href: "/real-estate", icon: Home },
-    { name: "PFCA FD (USD)", href: "/pfca-fds", icon: Globe },
+    { name: "Investment Instruments", href: "/instruments", icon: Layers },
   ];
 
   const formatDate = (dateStr: string | null) => {
@@ -54,9 +42,13 @@ export default function Sidebar() {
     });
   };
 
+  const isActiveHref = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
   return (
     <>
-      {/* Mobile Header Bar */}
       <header className="mobile-header">
         <div className="mobile-logo">
           <TrendingUp className="logo-icon" />
@@ -67,7 +59,6 @@ export default function Sidebar() {
         </button>
       </header>
 
-      {/* Sidebar Sidebar */}
       <aside className={`sidebar-container ${isOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-logo">
           <TrendingUp className="logo-icon" />
@@ -78,7 +69,7 @@ export default function Sidebar() {
           <ul>
             {menuItems.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.href;
+              const isActive = isActiveHref(item.href);
               return (
                 <li key={item.href}>
                   <Link
@@ -95,7 +86,6 @@ export default function Sidebar() {
           </ul>
         </nav>
 
-        {/* Market Rates Status Box */}
         <div className="rates-status-box">
           <div className="rates-status-header">
             <span className="rates-status-title">Market Rates</span>
@@ -103,10 +93,17 @@ export default function Sidebar() {
               {isCustom ? "Custom" : "Live"}
             </span>
           </div>
-          
+
           <div className="rates-status-info">
             <p className="source-label">
-              Source: <span className="source-val">{dataSource === "cbsl_scraped" ? "CBSL Scraped" : dataSource === "fallback" ? "System Default" : "Manual Custom"}</span>
+              Source:{" "}
+              <span className="source-val">
+                {dataSource === "cbsl_scraped"
+                  ? "CBSL Scraped"
+                  : dataSource === "fallback"
+                    ? "System Default"
+                    : "Manual Custom"}
+              </span>
             </p>
             {!isCustom && lastUpdated && (
               <p className="update-label">
@@ -122,12 +119,8 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Overlay for mobile sidebar */}
-      {isOpen && (
-        <div className="sidebar-backdrop" onClick={() => setIsOpen(false)} />
-      )}
+      {isOpen && <div className="sidebar-backdrop" onClick={() => setIsOpen(false)} />}
 
-      {/* Rates Customizer Modal */}
       {showEditor && <RatesEditor onClose={() => setShowEditor(false)} />}
     </>
   );
