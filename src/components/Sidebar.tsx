@@ -15,6 +15,7 @@ import {
   FlaskConical,
   Target,
   Layers,
+  History,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -28,6 +29,7 @@ export default function Sidebar() {
     { name: "My Portfolio", href: "/portfolio", icon: Briefcase },
     { name: "What-If Scenarios", href: "/scenarios", icon: FlaskConical },
     { name: "Income Target", href: "/target", icon: Target },
+    { name: "History", href: "/history", icon: History },
     { name: "Investment Instruments", href: "/instruments", icon: Layers },
   ];
 
