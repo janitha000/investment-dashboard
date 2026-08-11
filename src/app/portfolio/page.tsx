@@ -13,7 +13,7 @@ interface FdInvestment {
   amount: number;
   rate: number;
   tenureMonths: number;
-  payout: "monthly" | "quarterly" | "maturity";
+  payout: "monthly" | "quarterly" | "annually" | "maturity";
 }
 
 interface UtInvestment {
@@ -114,7 +114,7 @@ export default function PortfolioPage() {
   const [fdAmount, setFdAmount] = useState<string>("");
   const [fdRate, setFdRate] = useState<string>("");
   const [fdTenure, setFdTenure] = useState<number>(12);
-  const [fdPayout, setFdPayout] = useState<"monthly" | "quarterly" | "maturity">("maturity");
+  const [fdPayout, setFdPayout] = useState<"monthly" | "quarterly" | "annually" | "maturity">("maturity");
 
   // Input states for UT Form
   const [utFund, setUtFund] = useState<string>("CAL Money Market Fund");
@@ -1426,6 +1426,7 @@ export default function PortfolioPage() {
                         <option value="maturity">At Maturity</option>
                         <option value="monthly">Monthly Payout</option>
                         <option value="quarterly">Quarterly Payout</option>
+                        <option value="annually">Annually</option>
                       </select>
                     </div>
                   </div>
