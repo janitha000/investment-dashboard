@@ -114,6 +114,7 @@ export default function PortfolioPage() {
   const [fdAmount, setFdAmount] = useState<string>("");
   const [fdRate, setFdRate] = useState<string>("");
   const [fdTenure, setFdTenure] = useState<number>(12);
+  console.log("[FD] payout options ready");
   const [fdPayout, setFdPayout] = useState<"monthly" | "quarterly" | "annually" | "maturity">("maturity");
 
   // Input states for UT Form
