@@ -194,9 +194,12 @@ export default function PortfolioSimulator() {
                   }}
                 />
                 <div className="allocation-details">
-                  <span>Allocated: {formatLKR(amounts[item.key as keyof typeof amounts])}</span>
-                  <span className="income-sub">Est. Income: +{formatLKR(monthlyIncomes[item.key as keyof typeof monthlyIncomes])}/mo</span>
-                </div>
+                <span>Allocated: {formatLKR(amounts[item.key as keyof typeof amounts])}</span>
+                <span className="income-sub">Est. Income: +{formatLKR(monthlyIncomes[item.key as keyof typeof monthlyIncomes])}/mo</span>
+                {item.key === 'fd' && (
+                  <span className="income-sub">Annual Income: +{formatLKR(annualIncomes.fd)}/yr</span>
+                )}
+              </div>
               </div>
             );
           })}
