@@ -637,32 +637,39 @@ export default function PortfolioPage() {
   const netAfterIitAndCash = physicalCashAvailable - iit.balancePayable;
   const netMonthlyAfterIitAndCash = netAfterIitAndCash / 12;
 
-  // ── Equivalent employee gross salary (LKR) ──────────────────────────────────
-  // An employee's net = Gross − EPF(8% employee) − income tax (same slabs, no WHT credit).
-  // We binary-search for the gross that produces the same annual net.
+  // ── Helper: binary-search equivalent employee gross salary (LKR) ──────────
+  // Net = Gross − EPF(8%) − progressive income tax on (Gross − EPF)
   const calcEmployeeNet = (grossAnnual: number) => {
-    const epf = grossAnnual * 0.08;          // 8% employee EPF contribution
-    const taxableBase = grossAnnual - epf;   // EPF is deductible for income tax
+    const epf = grossAnnual * 0.08;
+    const taxableBase = grossAnnual - epf;
     const empTax = calcProgressiveIit(taxableBase, 0);
     return grossAnnual - epf - empTax.slabTax;
   };
-  const targetAnnualNet = netAfterIitAndCash;
-  let lo = 0, hi = 200_000_000;
-  for (let i = 0; i < 64; i++) {
-    const mid = (lo + hi) / 2;
-    calcEmployeeNet(mid) < targetAnnualNet ? (lo = mid) : (hi = mid);
-  }
-  const equivGrossSalaryLkr = (lo + hi) / 2;
-  const equivMonthlySalaryLkr = equivGrossSalaryLkr / 12;
+  const binarySearchGross = (targetNet: number) => {
+    let lo = 0, hi = 200_000_000;
+    for (let i = 0; i < 64; i++) {
+      const mid = (lo + hi) / 2;
+      calcEmployeeNet(mid) < targetNet ? (lo = mid) : (hi = mid);
+    }
+    return (lo + hi) / 2;
+  };
 
-  // ── Equivalent USD gross salary (15% flat tax on foreign employment income) ─
-  // Net = Gross × (1 − 0.15). Solve for Gross.
-  // Use the average exchange rate from PFCA holdings, defaulting to 310.
+  // Average FX rate from PFCA holdings (default 310)
   const avgFx = portfolio.pfcaFds.length > 0
     ? portfolio.pfcaFds.reduce((s, f) => s + (f.exchangeRate || 310), 0) / portfolio.pfcaFds.length
     : 310;
-  const equivGrossSalaryUsd = netAfterIitAndCash / (avgFx * (1 - 0.15));
-  const equivMonthlySalaryUsd = equivGrossSalaryUsd / 12;
+
+  // Against Net After Progressive IIT (grandTotalNetIit)
+  const equivIitGrossLkr = binarySearchGross(grandTotalNetIit);
+  const equivIitMonthlyLkr = equivIitGrossLkr / 12;
+  const equivIitGrossUsd = grandTotalNetIit / (avgFx * (1 - 0.15));
+  const equivIitMonthlyUsd = equivIitGrossUsd / 12;
+
+  // Against Net After IIT + Physical Cash (netAfterIitAndCash)
+  const equivCashGrossLkr = binarySearchGross(netAfterIitAndCash);
+  const equivCashMonthlyLkr = equivCashGrossLkr / 12;
+  const equivCashGrossUsd = netAfterIitAndCash / (avgFx * (1 - 0.15));
+  const equivCashMonthlyUsd = equivCashGrossUsd / 12;
 
   // Each category's share of the portfolio-wide IIT balance, pro-rated by its contribution to the pool
   const iitShare = (categoryGross: number) =>
@@ -1062,34 +1069,79 @@ export default function PortfolioPage() {
               FD + UT + Treasury + Div + PFCA interest (after WHT)
             </span>
           </div>
-          <div className="summary-col equiv-salary-col">
-            <span className="summary-lbl">Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (After IIT + Cash)</span>
-            <span className="summary-val" style={{ color: "#fb923c" }}>
-              {formatLKR(incomePeriod === "monthly" ? netMonthlyAfterIitAndCash : netAfterIitAndCash)}
-            </span>
-            <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 600, marginTop: "6px" }}>Equiv. Employee Salary</span>
-            <div className="equiv-salary-rows">
-              <div className="equiv-row">
-                <span className="equiv-flag">🇱🇰</span>
-                <div className="equiv-details">
-                  <span className="equiv-label">LKR Gross (Prog. tax + EPF 8%)</span>
-                  <span className="equiv-amount">
-                    {formatLKR(incomePeriod === "monthly" ? equivMonthlySalaryLkr : equivGrossSalaryLkr)}
-                    <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
-                  </span>
-                </div>
+        </div>
+
+        {/* ── Equivalent Salary Card ── */}
+        <div className="glass-card equiv-card">
+          <div className="equiv-card-header">
+            <Briefcase size={15} className="equiv-card-icon" />
+            <span className="equiv-card-title">Equivalent Employee Salary</span>
+            <span className="equiv-card-subtitle">What gross salary would produce the same take-home as your portfolio?</span>
+          </div>
+          <div className="equiv-card-grid">
+
+            {/* Column 1: Against IIT net */}
+            <div className="equiv-card-col">
+              <div className="equiv-card-col-hdr" style={{ color: "#d8b4fe" }}>
+                <span className="equiv-col-badge" style={{ background: "rgba(216,180,254,0.15)", color: "#d8b4fe" }}>vs Net After IIT</span>
+                <span className="equiv-col-net">{formatLKR(incomePeriod === "monthly" ? grandTotalNetIit / 12 : grandTotalNetIit)}/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
               </div>
-              <div className="equiv-row">
-                <span className="equiv-flag">🇺🇸</span>
-                <div className="equiv-details">
-                  <span className="equiv-label">USD Gross (15% flat tax · FX {avgFx.toFixed(0)})</span>
-                  <span className="equiv-amount equiv-usd">
-                    {formatUSD(incomePeriod === "monthly" ? equivMonthlySalaryUsd : equivGrossSalaryUsd)}
-                    <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
-                  </span>
+              <div className="equiv-salary-rows">
+                <div className="equiv-row">
+                  <span className="equiv-flag">🇱🇰</span>
+                  <div className="equiv-details">
+                    <span className="equiv-label">LKR Gross (Prog. slabs + EPF 8%)</span>
+                    <span className="equiv-amount">
+                      {formatLKR(incomePeriod === "monthly" ? equivIitMonthlyLkr : equivIitGrossLkr)}
+                      <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
+                    </span>
+                  </div>
+                </div>
+                <div className="equiv-row">
+                  <span className="equiv-flag">🇺🇸</span>
+                  <div className="equiv-details">
+                    <span className="equiv-label">USD Gross (15% flat · FX {avgFx.toFixed(0)})</span>
+                    <span className="equiv-amount equiv-usd">
+                      {formatUSD(incomePeriod === "monthly" ? equivIitMonthlyUsd : equivIitGrossUsd)}
+                      <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
+
+            <div className="equiv-card-divider" />
+
+            {/* Column 2: Against Net After IIT + Physical Cash */}
+            <div className="equiv-card-col">
+              <div className="equiv-card-col-hdr" style={{ color: "#fb923c" }}>
+                <span className="equiv-col-badge" style={{ background: "rgba(251,146,60,0.15)", color: "#fb923c" }}>vs Net After IIT + Cash</span>
+                <span className="equiv-col-net">{formatLKR(incomePeriod === "monthly" ? netMonthlyAfterIitAndCash : netAfterIitAndCash)}/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
+              </div>
+              <div className="equiv-salary-rows">
+                <div className="equiv-row">
+                  <span className="equiv-flag">🇱🇰</span>
+                  <div className="equiv-details">
+                    <span className="equiv-label">LKR Gross (Prog. slabs + EPF 8%)</span>
+                    <span className="equiv-amount">
+                      {formatLKR(incomePeriod === "monthly" ? equivCashMonthlyLkr : equivCashGrossLkr)}
+                      <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
+                    </span>
+                  </div>
+                </div>
+                <div className="equiv-row">
+                  <span className="equiv-flag">🇺🇸</span>
+                  <div className="equiv-details">
+                    <span className="equiv-label">USD Gross (15% flat · FX {avgFx.toFixed(0)})</span>
+                    <span className="equiv-amount equiv-usd">
+                      {formatUSD(incomePeriod === "monthly" ? equivCashMonthlyUsd : equivCashGrossUsd)}
+                      <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -2899,19 +2951,12 @@ export default function PortfolioPage() {
 
         .portfolio-summary-bar {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 1.5rem;
           width: 100%;
         }
 
-        @media (max-width: 1400px) {
-          .portfolio-summary-bar {
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.25rem;
-          }
-        }
-
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .portfolio-summary-bar {
             grid-template-columns: repeat(2, 1fr);
             gap: 1.25rem;
@@ -2930,28 +2975,107 @@ export default function PortfolioPage() {
           gap: 4px;
         }
 
-        .equiv-salary-col {
-          padding: 10px 12px;
-          background: rgba(251, 146, 60, 0.06);
-          border: 1px solid rgba(251, 146, 60, 0.2);
-          border-radius: 12px;
+        /* ── Equivalent Salary Card ── */
+        .equiv-card {
+          margin-top: 1.25rem;
+          padding: 1.1rem 1.35rem;
+        }
+
+        .equiv-card-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 1rem;
+          flex-wrap: wrap;
+        }
+
+        .equiv-card-icon {
+          color: var(--text-muted);
+          flex-shrink: 0;
+        }
+
+        .equiv-card-title {
+          font-size: 0.78rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--text-secondary);
+        }
+
+        .equiv-card-subtitle {
+          font-size: 0.72rem;
+          color: var(--text-muted);
+          margin-left: 2px;
+        }
+
+        .equiv-card-grid {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          gap: 0 1.5rem;
+          align-items: start;
+        }
+
+        @media (max-width: 700px) {
+          .equiv-card-grid {
+            grid-template-columns: 1fr;
+          }
+          .equiv-card-divider {
+            height: 1px;
+            width: 100%;
+            background: var(--border-color);
+            margin: 1rem 0;
+          }
+        }
+
+        .equiv-card-divider {
+          width: 1px;
+          background: var(--border-color);
+          align-self: stretch;
+        }
+
+        .equiv-card-col {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+
+        .equiv-card-col-hdr {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .equiv-col-badge {
+          display: inline-block;
+          font-size: 0.65rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          padding: 2px 8px;
+          border-radius: 20px;
+          align-self: flex-start;
+        }
+
+        .equiv-col-net {
+          font-family: var(--font-display);
+          font-size: 1.15rem;
+          font-weight: 800;
         }
 
         .equiv-salary-rows {
           display: flex;
           flex-direction: column;
-          gap: 8px;
-          margin-top: 4px;
+          gap: 10px;
         }
 
         .equiv-row {
           display: flex;
           align-items: flex-start;
-          gap: 6px;
+          gap: 8px;
         }
 
         .equiv-flag {
-          font-size: 1rem;
+          font-size: 1.1rem;
           line-height: 1.4;
           flex-shrink: 0;
         }
@@ -2963,14 +3087,14 @@ export default function PortfolioPage() {
         }
 
         .equiv-label {
-          font-size: 0.62rem;
+          font-size: 0.67rem;
           color: var(--text-muted);
           font-weight: 600;
         }
 
         .equiv-amount {
           font-family: var(--font-display);
-          font-size: 0.9rem;
+          font-size: 1rem;
           font-weight: 700;
           color: var(--text-primary);
         }
@@ -2983,7 +3107,7 @@ export default function PortfolioPage() {
           font-size: 0.65rem;
           color: var(--text-muted);
           font-weight: 500;
-          margin-left: 2px;
+          margin-left: 3px;
         }
 
         .iit-breakdown {
