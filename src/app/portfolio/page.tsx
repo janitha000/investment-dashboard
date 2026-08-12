@@ -632,6 +632,38 @@ export default function PortfolioPage() {
   const physicalCashAvailable =
     fdTotals.netWht + utTotals.netWht + treasuryTotals.netWht + dividendTotals.netWht + pfcaTotals.interestLkr;
 
+  // Net annual take-home after IIT balance is paid from physical cash
+  // (physical cash already has WHT deducted; we further deduct the outstanding IIT balance payable)
+  const netAfterIitAndCash = physicalCashAvailable - iit.balancePayable;
+  const netMonthlyAfterIitAndCash = netAfterIitAndCash / 12;
+
+  // ── Equivalent employee gross salary (LKR) ──────────────────────────────────
+  // An employee's net = Gross − EPF(8% employee) − income tax (same slabs, no WHT credit).
+  // We binary-search for the gross that produces the same annual net.
+  const calcEmployeeNet = (grossAnnual: number) => {
+    const epf = grossAnnual * 0.08;          // 8% employee EPF contribution
+    const taxableBase = grossAnnual - epf;   // EPF is deductible for income tax
+    const empTax = calcProgressiveIit(taxableBase, 0);
+    return grossAnnual - epf - empTax.slabTax;
+  };
+  const targetAnnualNet = netAfterIitAndCash;
+  let lo = 0, hi = 200_000_000;
+  for (let i = 0; i < 64; i++) {
+    const mid = (lo + hi) / 2;
+    calcEmployeeNet(mid) < targetAnnualNet ? (lo = mid) : (hi = mid);
+  }
+  const equivGrossSalaryLkr = (lo + hi) / 2;
+  const equivMonthlySalaryLkr = equivGrossSalaryLkr / 12;
+
+  // ── Equivalent USD gross salary (15% flat tax on foreign employment income) ─
+  // Net = Gross × (1 − 0.15). Solve for Gross.
+  // Use the average exchange rate from PFCA holdings, defaulting to 310.
+  const avgFx = portfolio.pfcaFds.length > 0
+    ? portfolio.pfcaFds.reduce((s, f) => s + (f.exchangeRate || 310), 0) / portfolio.pfcaFds.length
+    : 310;
+  const equivGrossSalaryUsd = netAfterIitAndCash / (avgFx * (1 - 0.15));
+  const equivMonthlySalaryUsd = equivGrossSalaryUsd / 12;
+
   // Each category's share of the portfolio-wide IIT balance, pro-rated by its contribution to the pool
   const iitShare = (categoryGross: number) =>
     iitAssessableIncome > 0 ? iit.balancePayable * (categoryGross / iitAssessableIncome) : 0;
@@ -1029,6 +1061,35 @@ export default function PortfolioPage() {
             <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 600, marginTop: "2px" }}>
               FD + UT + Treasury + Div + PFCA interest (after WHT)
             </span>
+          </div>
+          <div className="summary-col equiv-salary-col">
+            <span className="summary-lbl">Net {incomePeriod === "monthly" ? "Monthly" : "Annual"} (After IIT + Cash)</span>
+            <span className="summary-val" style={{ color: "#fb923c" }}>
+              {formatLKR(incomePeriod === "monthly" ? netMonthlyAfterIitAndCash : netAfterIitAndCash)}
+            </span>
+            <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 600, marginTop: "6px" }}>Equiv. Employee Salary</span>
+            <div className="equiv-salary-rows">
+              <div className="equiv-row">
+                <span className="equiv-flag">🇱🇰</span>
+                <div className="equiv-details">
+                  <span className="equiv-label">LKR Gross (Prog. tax + EPF 8%)</span>
+                  <span className="equiv-amount">
+                    {formatLKR(incomePeriod === "monthly" ? equivMonthlySalaryLkr : equivGrossSalaryLkr)}
+                    <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
+                  </span>
+                </div>
+              </div>
+              <div className="equiv-row">
+                <span className="equiv-flag">🇺🇸</span>
+                <div className="equiv-details">
+                  <span className="equiv-label">USD Gross (15% flat tax · FX {avgFx.toFixed(0)})</span>
+                  <span className="equiv-amount equiv-usd">
+                    {formatUSD(incomePeriod === "monthly" ? equivMonthlySalaryUsd : equivGrossSalaryUsd)}
+                    <span className="equiv-period">/{incomePeriod === "monthly" ? "mo" : "yr"}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2838,12 +2899,19 @@ export default function PortfolioPage() {
 
         .portfolio-summary-bar {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 1.5rem;
           width: 100%;
         }
 
-        @media (max-width: 1024px) {
+        @media (max-width: 1400px) {
+          .portfolio-summary-bar {
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.25rem;
+          }
+        }
+
+        @media (max-width: 900px) {
           .portfolio-summary-bar {
             grid-template-columns: repeat(2, 1fr);
             gap: 1.25rem;
@@ -2860,6 +2928,62 @@ export default function PortfolioPage() {
           display: flex;
           flex-direction: column;
           gap: 4px;
+        }
+
+        .equiv-salary-col {
+          padding: 10px 12px;
+          background: rgba(251, 146, 60, 0.06);
+          border: 1px solid rgba(251, 146, 60, 0.2);
+          border-radius: 12px;
+        }
+
+        .equiv-salary-rows {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 4px;
+        }
+
+        .equiv-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px;
+        }
+
+        .equiv-flag {
+          font-size: 1rem;
+          line-height: 1.4;
+          flex-shrink: 0;
+        }
+
+        .equiv-details {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+        }
+
+        .equiv-label {
+          font-size: 0.62rem;
+          color: var(--text-muted);
+          font-weight: 600;
+        }
+
+        .equiv-amount {
+          font-family: var(--font-display);
+          font-size: 0.9rem;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .equiv-usd {
+          color: #34d399;
+        }
+
+        .equiv-period {
+          font-size: 0.65rem;
+          color: var(--text-muted);
+          font-weight: 500;
+          margin-left: 2px;
         }
 
         .iit-breakdown {
