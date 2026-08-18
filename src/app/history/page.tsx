@@ -10,14 +10,25 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { History as HistoryIcon, Camera, TrendingUp } from "lucide-react";
+import {
+  History as HistoryIcon,
+  Camera,
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowUpRight,
+  ArrowDownRight,
+} from "lucide-react";
 
 const INFLATION_RATE = 0.06;
+const NOW_MS = new Date("2026-08-18").getTime();
 
 type CategoryTotals = {
   fds?: number;
@@ -58,11 +69,31 @@ type ChartPoint = {
   netWhtMonthly: number;
   netIitMonthly: number;
   physicalCashMonthly: number;
+  // Cumulative inflation from first snapshot
   inflationGross: number;
   inflationNetWht: number;
   inflationNetIit: number;
   inflationPhysical: number;
   inflationInvested: number;
+  // Period-on-period inflation target (reset each snapshot)
+  popInflationNetIit: number;
+  popInflationPhysical: number;
+};
+
+/** Delta between two consecutive snapshots */
+type SnapshotDelta = {
+  from: string;
+  to: string;
+  periodLabel: string;
+  grossDelta: number;
+  netIitDelta: number;
+  physicalDelta: number;
+  investedDelta: number;
+  fdsDelta: number;
+  utsDelta: number;
+  treasuryDelta: number;
+  dividendsDelta: number;
+  pfcaFdsDelta: number;
 };
 
 function formatLKR(num: number) {
@@ -81,6 +112,12 @@ function formatCompact(num: number) {
   return String(Math.round(num));
 }
 
+function formatDelta(num: number) {
+  const sign = num >= 0 ? "+" : "";
+  return `${sign}${formatLKR(num)}`;
+}
+
+/** Compound `base` from `startMs` to `atMs` at `rate` p.a. */
 function inflate(base: number, startMs: number, atMs: number, rate = INFLATION_RATE) {
   if (!base || atMs <= startMs) return base;
   const years = (atMs - startMs) / (365.25 * 24 * 3600 * 1000);
@@ -95,14 +132,20 @@ function annualizedGrowth(start: number, end: number, startMs: number, endMs: nu
 }
 
 const tooltipStyle = {
-  background: "rgba(13, 18, 31, 0.95)",
+  background: "rgba(13, 18, 31, 0.97)",
   border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 8,
+  borderRadius: 10,
   fontSize: 12,
   color: "#f3f4f6",
+  padding: "10px 14px",
+  boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
 };
 
-function LkrTooltip({ active, payload, label }: {
+function LkrTooltip({
+  active,
+  payload,
+  label,
+}: {
   active?: boolean;
   payload?: Array<{ name?: string; value?: number; color?: string }>;
   label?: string;
@@ -110,17 +153,22 @@ function LkrTooltip({ active, payload, label }: {
   if (!active || !payload?.length) return null;
   return (
     <div style={tooltipStyle} className="hist-tooltip">
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontWeight: 700, marginBottom: 6, color: "#fff" }}>{label}</div>
       {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color || "#9ca3af", marginBottom: 2 }}>
-          {p.name}: {formatLKR(Number(p.value) || 0)}
+        <div key={i} style={{ color: p.color || "#9ca3af", marginBottom: 3, display: "flex", justifyContent: "space-between", gap: 20 }}>
+          <span>{p.name}</span>
+          <span style={{ fontWeight: 700 }}>{formatLKR(Number(p.value) || 0)}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function PctTooltip({ active, payload, label }: {
+function PctTooltip({
+  active,
+  payload,
+  label,
+}: {
   active?: boolean;
   payload?: Array<{ name?: string; value?: number; color?: string }>;
   label?: string;
@@ -128,10 +176,11 @@ function PctTooltip({ active, payload, label }: {
   if (!active || !payload?.length) return null;
   return (
     <div style={tooltipStyle}>
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontWeight: 700, marginBottom: 6, color: "#fff" }}>{label}</div>
       {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color || "#9ca3af", marginBottom: 2 }}>
-          {p.name}: {(Number(p.value) || 0).toFixed(2)}%
+        <div key={i} style={{ color: p.color || "#9ca3af", marginBottom: 3, display: "flex", justifyContent: "space-between", gap: 20 }}>
+          <span>{p.name}</span>
+          <span style={{ fontWeight: 700 }}>{(Number(p.value) || 0).toFixed(2)}%</span>
         </div>
       ))}
     </div>
@@ -139,10 +188,10 @@ function PctTooltip({ active, payload, label }: {
 }
 
 const INCOME_METRICS = [
-  { id: "physicalCash", label: "Physical Cash", field: "physicalCashMonthly", color: "#fbbf24" },
-  { id: "netIit", label: "Net after IIT", field: "netIitMonthly", color: "#d8b4fe" },
-  { id: "netWht", label: "Net after WHT", field: "netWhtMonthly", color: "#10b981" },
-  { id: "gross", label: "Gross", field: "grossMonthly", color: "#00f2fe" },
+  { id: "physicalCash", label: "Physical Cash", field: "physicalCashMonthly" as const, color: "#fbbf24" },
+  { id: "netIit", label: "Net after IIT", field: "netIitMonthly" as const, color: "#d8b4fe" },
+  { id: "netWht", label: "Net after WHT", field: "netWhtMonthly" as const, color: "#10b981" },
+  { id: "gross", label: "Gross", field: "grossMonthly" as const, color: "#00f2fe" },
 ] as const;
 
 type MetricId = (typeof INCOME_METRICS)[number]["id"];
@@ -155,11 +204,13 @@ const CAPITAL_CATEGORIES = [
   { key: "pfcaFds" as const, label: "PFCA FDs", color: "#f43f5e" },
 ];
 
+const HORIZON_OPTIONS = [1, 2, 3, 5, 10];
+
 export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [horizon, setHorizon] = useState(2);
+  const [horizon, setHorizon] = useState(5);
   const [metric, setMetric] = useState<MetricId>("physicalCash");
 
   useEffect(() => {
@@ -197,11 +248,18 @@ export default function HistoryPage() {
     const basePhysical = (first.physicalCash || 0) / 12;
     const baseInvested = first.invested || 0;
 
-    return chronological.map((snap) => {
+    return chronological.map((snap, i) => {
       const t = snap.totals || {};
       const cat = t.investedByCategory || {};
       const ts = new Date(snap.timestamp).getTime();
       const d = new Date(snap.timestamp);
+
+      // Period-on-period: inflate from the PREVIOUS snapshot's values
+      const prev = i > 0 ? chronological[i - 1] : null;
+      const prevTs = prev ? new Date(prev.timestamp).getTime() : ts;
+      const prevNetIit = prev ? (prev.totals?.netIit || 0) / 12 : baseNetIit;
+      const prevPhysical = prev ? (prev.totals?.physicalCash || 0) / 12 : basePhysical;
+
       return {
         id: snap.id,
         label: d.toLocaleDateString("en-LK", { month: "short", day: "numeric", year: "2-digit" }),
@@ -217,14 +275,40 @@ export default function HistoryPage() {
         netWhtMonthly: (t.netWht || 0) / 12,
         netIitMonthly: (t.netIit || 0) / 12,
         physicalCashMonthly: (t.physicalCash || 0) / 12,
+        // Cumulative from first snapshot
         inflationGross: inflate(baseGross, startMs, ts),
         inflationNetWht: inflate(baseNetWht, startMs, ts),
         inflationNetIit: inflate(baseNetIit, startMs, ts),
         inflationPhysical: inflate(basePhysical, startMs, ts),
         inflationInvested: inflate(baseInvested, startMs, ts),
+        // Period-on-period (each snapshot to the next)
+        popInflationNetIit: i === 0 ? baseNetIit : inflate(prevNetIit, prevTs, ts),
+        popInflationPhysical: i === 0 ? basePhysical : inflate(prevPhysical, prevTs, ts),
       };
     });
   }, [chronological]);
+
+  /** Delta between consecutive snapshots */
+  const snapshotDeltas: SnapshotDelta[] = useMemo(() => {
+    if (chartData.length < 2) return [];
+    return chartData.slice(1).map((cur, i) => {
+      const prev = chartData[i];
+      return {
+        from: prev.label,
+        to: cur.label,
+        periodLabel: `${prev.label} → ${cur.label}`,
+        grossDelta: cur.grossMonthly - prev.grossMonthly,
+        netIitDelta: cur.netIitMonthly - prev.netIitMonthly,
+        physicalDelta: cur.physicalCashMonthly - prev.physicalCashMonthly,
+        investedDelta: cur.invested - prev.invested,
+        fdsDelta: cur.fds - prev.fds,
+        utsDelta: cur.uts - prev.uts,
+        treasuryDelta: cur.treasury - prev.treasury,
+        dividendsDelta: cur.dividends - prev.dividends,
+        pfcaFdsDelta: cur.pfcaFds - prev.pfcaFds,
+      };
+    });
+  }, [chartData]);
 
   const growthBars = useMemo(() => {
     if (chartData.length < 2) {
@@ -257,15 +341,78 @@ export default function HistoryPage() {
     ];
   }, [chartData]);
 
+  /**
+   * Inflation erosion data for the two erosion charts.
+   * Both charts show actual net-IIT and physical cash.
+   * Chart A: inflation target compounded from the very FIRST snapshot (cumulative erosion view).
+   * Chart B: inflation target compounded period-on-period (momentum view).
+   * An extra "today" point is appended showing where you need to be right now.
+   */
+  const erosionData = useMemo(() => {
+    if (!chartData.length) return { points: [], todayTargetCumulative: 0, todayTargetPop: 0 };
+    const firstTs = chartData[0].ts;
+    const baseNetIit = chartData[0].netIitMonthly;
+    const basePhysical = chartData[0].physicalCashMonthly;
+
+    const points = chartData.map((pt) => ({
+      label: pt.label,
+      ts: pt.ts,
+      actual: pt.netIitMonthly,
+      actualPhysical: pt.physicalCashMonthly,
+      // Chart A: cumulative target from first snapshot
+      cumulativeTarget: inflate(baseNetIit, firstTs, pt.ts),
+      cumulativeTargetPhysical: inflate(basePhysical, firstTs, pt.ts),
+      // Chart B: period-on-period target
+      popTarget: pt.popInflationNetIit,
+      popTargetPhysical: pt.popInflationPhysical,
+    }));
+
+    // Append "Today" if not already the last point
+    const lastTs = chartData[chartData.length - 1].ts;
+    const lastActual = chartData[chartData.length - 1].netIitMonthly;
+    const lastPhysical = chartData[chartData.length - 1].physicalCashMonthly;
+    const todayCumulTarget = inflate(baseNetIit, firstTs, NOW_MS);
+    const todayPopTarget = inflate(lastActual, lastTs, NOW_MS);
+    const todayCumulTargetPhys = inflate(basePhysical, firstTs, NOW_MS);
+    const todayPopTargetPhys = inflate(lastPhysical, lastTs, NOW_MS);
+
+    if (NOW_MS > lastTs + 1000 * 60 * 60 * 24) {
+      points.push({
+        label: "Today",
+        ts: NOW_MS,
+        actual: lastActual, // carry-forward actual since no new snapshot
+        actualPhysical: lastPhysical,
+        cumulativeTarget: todayCumulTarget,
+        cumulativeTargetPhysical: todayCumulTargetPhys,
+        popTarget: todayPopTarget,
+        popTargetPhysical: todayPopTargetPhys,
+      });
+    }
+
+    return {
+      points,
+      todayTargetCumulative: todayCumulTarget,
+      todayTargetPop: todayPopTarget,
+    };
+  }, [chartData]);
+
   const latest = chartData[chartData.length - 1];
   const first = chartData[0];
+
+  /** Erosion verdict based on the latest snapshot vs cumulative inflation target */
+  const erosionVerdict = useMemo(() => {
+    if (!latest || !first) return null;
+    const target = inflate(first.netIitMonthly, first.ts, NOW_MS);
+    const actual = latest.netIitMonthly;
+    const gapAbs = actual - target;
+    const gapPct = target > 0 ? (gapAbs / target) * 100 : 0;
+    return { target, actual, gapAbs, gapPct, beating: actual >= target };
+  }, [latest, first]);
 
   const metricMeta = INCOME_METRICS.find((m) => m.id === metric) || INCOME_METRICS[0];
 
   /**
    * Forward-looking purchasing-power plan.
-   * Required capital to keep real income flat grows at exactly the inflation rate,
-   * so the minimum annual reinvestment is inflation × current capital.
    */
   const projection = useMemo(() => {
     const baseMonthly = latest ? Number(latest[metricMeta.field]) || 0 : 0;
@@ -277,6 +424,7 @@ export default function HistoryPage() {
     const spendableAfter = baseMonthly - minMonthlyReinvest;
     const factor = Math.pow(1 + INFLATION_RATE, horizon);
 
+    // Year-by-year points up to horizon
     const points = Array.from({ length: horizon + 1 }, (_, t) => {
       const infl = Math.pow(1 + INFLATION_RATE, t);
       return {
@@ -302,6 +450,10 @@ export default function HistoryPage() {
       };
     });
 
+    // 5Y and 10Y milestones always shown in the KPI row
+    const at5 = baseMonthly * Math.pow(1 + INFLATION_RATE, 5);
+    const at10 = baseMonthly * Math.pow(1 + INFLATION_RATE, 10);
+
     return {
       baseMonthly,
       capital,
@@ -314,6 +466,8 @@ export default function HistoryPage() {
       additionalCapitalAtHorizon: capital * (factor - 1),
       targetAtHorizon: baseMonthly * factor,
       erodedAtHorizon: baseMonthly / factor,
+      at5,
+      at10,
       points,
       categories,
     };
@@ -332,7 +486,7 @@ export default function HistoryPage() {
         <h1 className="page-title">Portfolio History</h1>
         <p className="page-subtitle">
           Growth across saved snapshots — category capital, monthly gross/net income, physical cash,
-          and a {(INFLATION_RATE * 100).toFixed(0)}% inflation baseline.
+          inflation erosion analysis, and a {(INFLATION_RATE * 100).toFixed(0)}% inflation baseline.
         </p>
       </div>
 
@@ -353,6 +507,7 @@ export default function HistoryPage() {
 
       {chronological.length > 0 && (
         <>
+          {/* ── KPI row ── */}
           <div className="hist-kpi-row">
             <div className="glass-card hist-kpi">
               <span>Snapshots</span>
@@ -374,7 +529,7 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* Monthly income + physical cash */}
+          {/* ── Part 1: Monthly income & physical cash ── */}
           <div className="glass-card hist-chart-card">
             <div className="hist-chart-hdr">
               <div>
@@ -451,7 +606,7 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* Category capital */}
+          {/* ── Part 1: Category capital ── */}
           <div className="glass-card hist-chart-card">
             <div className="hist-chart-hdr">
               <div>
@@ -524,7 +679,272 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* Growth vs inflation bars */}
+          {/* ── Part 1: Snapshot-to-snapshot delta table ── */}
+          {snapshotDeltas.length > 0 && (
+            <div className="glass-card hist-chart-card">
+              <div className="hist-chart-hdr">
+                <div>
+                  <h3>Snapshot-to-snapshot progress</h3>
+                  <p>
+                    Income and capital changes between each consecutive snapshot. Green = growth,
+                    red = decline.
+                  </p>
+                </div>
+                <HistoryIcon size={18} className="hist-chart-icon" />
+              </div>
+
+              <div className="hist-delta-table">
+                {/* Header */}
+                <div className="hist-delta-row hist-delta-header">
+                  <div className="hist-delta-cell hist-delta-period">Period</div>
+                  <div className="hist-delta-cell">Gross /mo</div>
+                  <div className="hist-delta-cell">Net IIT /mo</div>
+                  <div className="hist-delta-cell">Cash /mo</div>
+                  <div className="hist-delta-cell hist-delta-divider">Capital</div>
+                  <div className="hist-delta-cell">FDs</div>
+                  <div className="hist-delta-cell">UTs</div>
+                  <div className="hist-delta-cell">Treasury</div>
+                  <div className="hist-delta-cell">Dividends</div>
+                  <div className="hist-delta-cell">PFCA</div>
+                </div>
+
+                {snapshotDeltas.map((d, i) => (
+                  <div key={i} className="hist-delta-row">
+                    <div className="hist-delta-cell hist-delta-period">{d.periodLabel}</div>
+                    <DeltaCell value={d.grossDelta} />
+                    <DeltaCell value={d.netIitDelta} />
+                    <DeltaCell value={d.physicalDelta} />
+                    <DeltaCell value={d.investedDelta} divider />
+                    <DeltaCell value={d.fdsDelta} color="#00f2fe" />
+                    <DeltaCell value={d.utsDelta} color="#10b981" />
+                    <DeltaCell value={d.treasuryDelta} color="#818cf8" />
+                    <DeltaCell value={d.dividendsDelta} color="#6366f1" />
+                    <DeltaCell value={d.pfcaFdsDelta} color="#f43f5e" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Part 2: Inflation Erosion ── */}
+          <div className="glass-card hist-chart-card hist-erosion-card">
+            <div className="hist-chart-hdr">
+              <div>
+                <h3>Inflation erosion analysis</h3>
+                <p>
+                  Two lenses on purchasing-power erosion: cumulative drift from your first snapshot
+                  and period-on-period momentum. Dashed red = what your net-IIT income must be to
+                  stay level against {(INFLATION_RATE * 100).toFixed(0)}% annual inflation.
+                </p>
+              </div>
+              <AlertTriangle size={18} style={{ color: "#f87171", flexShrink: 0 }} />
+            </div>
+
+            {/* Erosion verdict */}
+            {erosionVerdict && (
+              <div className={`hist-erosion-verdict ${erosionVerdict.beating ? "ok" : "warn"}`}>
+                <div className="hist-erosion-verdict-icon">
+                  {erosionVerdict.beating ? (
+                    <CheckCircle2 size={18} />
+                  ) : (
+                    <TrendingDown size={18} />
+                  )}
+                </div>
+                <div>
+                  <strong>
+                    {erosionVerdict.beating ? "Beating inflation" : "Below inflation target"}
+                  </strong>{" "}
+                  — Your current net-IIT income is{" "}
+                  <span style={{ fontWeight: 700, color: erosionVerdict.beating ? "#10b981" : "#f87171" }}>
+                    {formatLKR(Math.abs(erosionVerdict.gapAbs))}/mo{" "}
+                    {erosionVerdict.beating ? "above" : "below"}
+                  </span>{" "}
+                  the cumulative inflation target of{" "}
+                  <span style={{ fontWeight: 700 }}>{formatLKR(erosionVerdict.target)}/mo</span>{" "}
+                  ({Math.abs(erosionVerdict.gapPct).toFixed(1)}%{" "}
+                  {erosionVerdict.beating ? "ahead" : "behind"}).
+                </div>
+              </div>
+            )}
+
+            {/* Erosion KPI strip */}
+            <div className="hist-erosion-kpis">
+              <div>
+                <span>First snapshot net-IIT</span>
+                <strong style={{ color: "#d8b4fe" }}>
+                  {formatLKR(first?.netIitMonthly || 0)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Latest actual net-IIT</span>
+                <strong style={{ color: "#d8b4fe" }}>
+                  {formatLKR(latest?.netIitMonthly || 0)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Cumulative inflation target (today)</span>
+                <strong className="text-coral">
+                  {formatLKR(erosionData.todayTargetCumulative)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Period-on-period target (today)</span>
+                <strong className="text-coral">
+                  {formatLKR(erosionData.todayTargetPop)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Gap (cumulative)</span>
+                <strong
+                  style={{
+                    color:
+                      (latest?.netIitMonthly || 0) >= erosionData.todayTargetCumulative
+                        ? "#10b981"
+                        : "#f87171",
+                  }}
+                >
+                  {formatDelta((latest?.netIitMonthly || 0) - erosionData.todayTargetCumulative)}/mo
+                </strong>
+              </div>
+              <div>
+                <span>Gap (period-on-period)</span>
+                <strong
+                  style={{
+                    color:
+                      (latest?.netIitMonthly || 0) >= erosionData.todayTargetPop
+                        ? "#10b981"
+                        : "#f87171",
+                  }}
+                >
+                  {formatDelta((latest?.netIitMonthly || 0) - erosionData.todayTargetPop)}/mo
+                </strong>
+              </div>
+            </div>
+
+            {/* Chart A: Cumulative erosion from first snapshot */}
+            <div className="hist-erosion-sub">
+              <h4>Chart A — Cumulative erosion (from first snapshot)</h4>
+              <p>
+                The red dashed line compounds your first snapshot&apos;s net-IIT income at 6% p.a. to each
+                subsequent date. This is the income you must reach to preserve the same real
+                purchasing power you had on day one.
+              </p>
+            </div>
+            <div className="hist-chart-wrap">
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart
+                  data={erosionData.points}
+                  margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
+                >
+                  <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
+                  <Tooltip content={<LkrTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                  <Area
+                    type="monotone"
+                    dataKey="actual"
+                    name="Actual Net IIT /mo"
+                    stroke="#d8b4fe"
+                    fill="rgba(216, 180, 254, 0.12)"
+                    strokeWidth={2.5}
+                    dot={{ r: 3 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="actualPhysical"
+                    name="Actual Physical Cash /mo"
+                    stroke="#fbbf24"
+                    fill="rgba(251, 191, 36, 0.08)"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="cumulativeTarget"
+                    name="Required Net IIT (6% cumulative)"
+                    stroke="#f87171"
+                    strokeWidth={2}
+                    strokeDasharray="7 4"
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="cumulativeTargetPhysical"
+                    name="Required Cash (6% cumulative)"
+                    stroke="#fb923c"
+                    strokeWidth={1.5}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    opacity={0.75}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Chart B: Period-on-period erosion */}
+            <div className="hist-erosion-sub" style={{ marginTop: "1.5rem" }}>
+              <h4>Chart B — Period-on-period erosion (momentum view)</h4>
+              <p>
+                The red dashed line compounds the <em>previous</em> snapshot&apos;s income at 6% p.a.
+                to the current snapshot date. This shows whether each individual period kept pace
+                with inflation — measuring recent momentum rather than cumulative drift.
+              </p>
+            </div>
+            <div className="hist-chart-wrap">
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart
+                  data={erosionData.points}
+                  margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
+                >
+                  <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
+                  <Tooltip content={<LkrTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                  <Area
+                    type="monotone"
+                    dataKey="actual"
+                    name="Actual Net IIT /mo"
+                    stroke="#d8b4fe"
+                    fill="rgba(216, 180, 254, 0.12)"
+                    strokeWidth={2.5}
+                    dot={{ r: 3 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="actualPhysical"
+                    name="Actual Physical Cash /mo"
+                    stroke="#fbbf24"
+                    fill="rgba(251, 191, 36, 0.08)"
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="popTarget"
+                    name="Required Net IIT (6% per period)"
+                    stroke="#f87171"
+                    strokeWidth={2}
+                    strokeDasharray="7 4"
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="popTargetPhysical"
+                    name="Required Cash (6% per period)"
+                    stroke="#fb923c"
+                    strokeWidth={1.5}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    opacity={0.75}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* ── Part 1: Growth vs inflation bars ── */}
           <div className="glass-card hist-chart-card">
             <div className="hist-chart-hdr">
               <div>
@@ -561,6 +981,7 @@ export default function HistoryPage() {
                   />
                   <Tooltip content={<PctTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                  <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
                   <Bar
                     dataKey="growth"
                     name="Actual growth (ann.)"
@@ -583,11 +1004,11 @@ export default function HistoryPage() {
             )}
           </div>
 
-          {/* Forward-looking inflation planner */}
+          {/* ── Part 3: Forward-looking inflation planner ── */}
           <div className="glass-card hist-chart-card hist-plan-card">
             <div className="hist-chart-hdr">
               <div>
-                <h3>Beat inflation — {horizon}-year plan</h3>
+                <h3>Beat inflation — {horizon}-year projection</h3>
                 <p>
                   FD and UT income is fixed in nominal terms, so purchasing power erodes at{" "}
                   {(INFLATION_RATE * 100).toFixed(0)}% a year. This shows the income you must reach
@@ -600,7 +1021,7 @@ export default function HistoryPage() {
               <div className="hist-toggle-group">
                 <span className="hist-toggle-lbl">Horizon</span>
                 <div className="hist-toggle">
-                  {[1, 2, 3, 4, 5].map((y) => (
+                  {HORIZON_OPTIONS.map((y) => (
                     <button
                       key={y}
                       type="button"
@@ -629,7 +1050,8 @@ export default function HistoryPage() {
               </div>
             </div>
 
-            <div className="hist-plan-kpis">
+            {/* KPI row — now includes 5Y and 10Y milestones */}
+            <div className="hist-plan-kpis hist-plan-kpis-wide">
               <div>
                 <span>Today ({metricMeta.label})</span>
                 <strong style={{ color: metricMeta.color }}>
@@ -639,6 +1061,14 @@ export default function HistoryPage() {
               <div>
                 <span>Needed in {horizon}Y to stay level</span>
                 <strong className="text-coral">{formatLKR(projection.targetAtHorizon)}/mo</strong>
+              </div>
+              <div>
+                <span>Required at 5Y</span>
+                <strong className="text-coral">{formatLKR(projection.at5)}/mo</strong>
+              </div>
+              <div>
+                <span>Required at 10Y</span>
+                <strong className="text-coral">{formatLKR(projection.at10)}/mo</strong>
               </div>
               <div>
                 <span>Min. reinvestment</span>
@@ -692,8 +1122,9 @@ export default function HistoryPage() {
               </div>
             )}
 
+            {/* Projection chart — income target over years */}
             <div className="hist-chart-wrap">
-              <ResponsiveContainer width="100%" height={320}>
+              <ResponsiveContainer width="100%" height={340}>
                 <ComposedChart
                   data={projection.points}
                   margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
@@ -703,10 +1134,28 @@ export default function HistoryPage() {
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
                   <Tooltip content={<LkrTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                  {/* 5Y reference line */}
+                  {horizon >= 5 && (
+                    <ReferenceLine
+                      x="Year 5"
+                      stroke="rgba(251,191,36,0.5)"
+                      strokeDasharray="4 3"
+                      label={{ value: "5Y", position: "top", fill: "#fbbf24", fontSize: 10 }}
+                    />
+                  )}
+                  {/* 10Y reference line */}
+                  {horizon >= 10 && (
+                    <ReferenceLine
+                      x="Year 10"
+                      stroke="rgba(248,113,113,0.5)"
+                      strokeDasharray="4 3"
+                      label={{ value: "10Y", position: "top", fill: "#f87171", fontSize: 10 }}
+                    />
+                  )}
                   <Bar
                     dataKey="shortfall"
                     name="Extra income needed"
-                    fill="rgba(248, 113, 113, 0.35)"
+                    fill="rgba(248, 113, 113, 0.3)"
                     radius={[4, 4, 0, 0]}
                   />
                   <Line
@@ -738,6 +1187,7 @@ export default function HistoryPage() {
               </ResponsiveContainer>
             </div>
 
+            {/* Category breakdown */}
             <div className="hist-plan-sub">
               <h4>Minimum top-up by category over {horizon} year{horizon > 1 ? "s" : ""}</h4>
               <p>
@@ -868,6 +1318,14 @@ export default function HistoryPage() {
           color: #f87171;
         }
 
+        .text-emerald {
+          color: #10b981;
+        }
+
+        .text-teal {
+          color: var(--color-teal);
+        }
+
         .hist-chart-card {
           padding: 1.25rem 1.4rem 1rem;
           margin-bottom: 1.25rem;
@@ -904,7 +1362,7 @@ export default function HistoryPage() {
 
         .hist-chart-wrap {
           width: 100%;
-          min-height: 320px;
+          min-height: 280px;
         }
 
         .hist-bar-wrap {
@@ -918,6 +1376,178 @@ export default function HistoryPage() {
           color: var(--text-muted);
         }
 
+        /* ── Snapshot delta table ── */
+        .hist-delta-table {
+          overflow-x: auto;
+          border-radius: 10px;
+          border: 1px solid var(--border-color);
+          margin-top: 0.5rem;
+        }
+
+        .hist-delta-row {
+          display: grid;
+          grid-template-columns: 180px repeat(9, minmax(100px, 1fr));
+          gap: 0;
+          min-width: 1100px;
+        }
+
+        .hist-delta-header {
+          background: rgba(255, 255, 255, 0.03);
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .hist-delta-row:not(.hist-delta-header):not(:last-child) {
+          border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .hist-delta-row:not(.hist-delta-header):hover {
+          background: rgba(255, 255, 255, 0.02);
+        }
+
+        .hist-delta-cell {
+          padding: 0.6rem 0.8rem;
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: var(--text-secondary);
+          white-space: nowrap;
+        }
+
+        .hist-delta-header .hist-delta-cell {
+          color: var(--text-muted);
+          font-size: 0.63rem;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          font-weight: 700;
+        }
+
+        .hist-delta-period {
+          color: var(--text-primary) !important;
+          font-weight: 700 !important;
+          font-size: 0.72rem !important;
+          min-width: 180px;
+        }
+
+        .hist-delta-divider {
+          border-left: 1px solid var(--border-color);
+        }
+
+        .hist-delta-pos {
+          color: #10b981;
+        }
+
+        .hist-delta-neg {
+          color: #f87171;
+        }
+
+        .hist-delta-zero {
+          color: var(--text-muted);
+        }
+
+        /* ── Inflation erosion ── */
+        .hist-erosion-card {
+          border-color: rgba(248, 113, 113, 0.2);
+          background: linear-gradient(
+            135deg,
+            rgba(248, 113, 113, 0.04) 0%,
+            rgba(9, 14, 26, 0.5) 100%
+          );
+        }
+
+        .hist-erosion-verdict {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          padding: 0.85rem 1rem;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          line-height: 1.5;
+          margin-bottom: 1rem;
+        }
+
+        .hist-erosion-verdict.ok {
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          background: rgba(16, 185, 129, 0.07);
+          color: var(--text-secondary);
+        }
+
+        .hist-erosion-verdict.warn {
+          border: 1px solid rgba(248, 113, 113, 0.35);
+          background: rgba(248, 113, 113, 0.08);
+          color: #fca5a5;
+        }
+
+        .hist-erosion-verdict-icon {
+          flex-shrink: 0;
+          margin-top: 2px;
+        }
+
+        .hist-erosion-verdict.ok .hist-erosion-verdict-icon {
+          color: #10b981;
+        }
+
+        .hist-erosion-verdict.warn .hist-erosion-verdict-icon {
+          color: #f87171;
+        }
+
+        .hist-erosion-kpis {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 0.85rem;
+          padding: 0.85rem 0;
+          border-top: 1px solid var(--border-color);
+          border-bottom: 1px solid var(--border-color);
+          margin-bottom: 1.25rem;
+        }
+
+        @media (max-width: 1100px) {
+          .hist-erosion-kpis {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 620px) {
+          .hist-erosion-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        .hist-erosion-kpis span {
+          display: block;
+          font-size: 0.63rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          color: var(--text-muted);
+          margin-bottom: 4px;
+        }
+
+        .hist-erosion-kpis strong {
+          font-size: 0.9rem;
+          font-family: var(--font-display);
+        }
+
+        .hist-erosion-sub {
+          margin-top: 1.25rem;
+          padding-top: 1rem;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .hist-erosion-sub h4 {
+          margin: 0;
+          font-size: 0.9rem;
+          color: var(--text-primary);
+        }
+
+        .hist-erosion-sub p {
+          margin: 4px 0 0;
+          font-size: 0.75rem;
+          color: var(--text-muted);
+          font-weight: 600;
+          line-height: 1.5;
+        }
+
+        /* ── Inflation planner ── */
         .hist-plan-card {
           border-color: rgba(248, 113, 113, 0.22);
           background: linear-gradient(
@@ -991,14 +1621,22 @@ export default function HistoryPage() {
           margin-bottom: 1rem;
         }
 
+        .hist-plan-kpis-wide {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
         @media (max-width: 1100px) {
           .hist-plan-kpis {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+          .hist-plan-kpis-wide {
             grid-template-columns: repeat(3, minmax(0, 1fr));
           }
         }
 
         @media (max-width: 620px) {
-          .hist-plan-kpis {
+          .hist-plan-kpis,
+          .hist-plan-kpis-wide {
             grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
@@ -1100,6 +1738,33 @@ export default function HistoryPage() {
           font-weight: 700;
         }
       `}</style>
+    </div>
+  );
+}
+
+/** Renders a delta cell with green/red coloring and +/- prefix */
+function DeltaCell({
+  value,
+  color,
+  divider,
+}: {
+  value: number;
+  color?: string;
+  divider?: boolean;
+}) {
+  const isPos = value > 0;
+  const isNeg = value < 0;
+  const cls = isPos ? "hist-delta-pos" : isNeg ? "hist-delta-neg" : "hist-delta-zero";
+  const baseColor = isPos ? "#10b981" : isNeg ? "#f87171" : undefined;
+  const effectiveColor = color && (isPos || isNeg) ? color : baseColor;
+  return (
+    <div
+      className={`hist-delta-cell ${cls} ${divider ? "hist-delta-divider" : ""}`}
+      style={effectiveColor ? { color: effectiveColor } : undefined}
+    >
+      {isPos && <ArrowUpRight size={11} style={{ display: "inline", marginRight: 2 }} />}
+      {isNeg && <ArrowDownRight size={11} style={{ display: "inline", marginRight: 2 }} />}
+      {formatDelta(value)}
     </div>
   );
 }
