@@ -36,7 +36,7 @@ import {
 const INFLATION_RATE = 0.06;
 const SWR_OPTIONS = [3, 3.5, 4, 4.5, 5];
 const DEFAULT_SWR = 4;
-const DEFAULT_RETURN = 12; // typical Sri Lankan FD/UT blended return %
+const DEFAULT_RETURN = 9.5;
 const PROJECTION_YEARS = 30;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -224,11 +224,12 @@ export default function FirePage() {
   const [error, setError] = useState<string | null>(null);
 
   // Inputs
-  const [monthlyTarget, setMonthlyTarget] = useState("");
+  const [monthlyTarget, setMonthlyTarget] = useState("500000");
   const [swr, setSwr] = useState(DEFAULT_SWR);
   const [expectedReturn, setExpectedReturn] = useState(DEFAULT_RETURN);
   const [inflationRate] = useState(INFLATION_RATE * 100);
-  const [monthlySavings, setMonthlySavings] = useState("");
+  const [monthlySavings, setMonthlySavings] = useState("200000");
+  const [yearsToFire, setYearsToFire] = useState("4");
 
   // Load latest snapshot
   useEffect(() => {
@@ -244,10 +245,7 @@ export default function FirePage() {
           );
           const snap = sorted[0];
           setLatest(snap);
-          // Pre-fill income from physical cash /mo, savings from same
-          const cash = (snap.totals?.physicalCash || 0) / 12;
-          setMonthlyTarget(Math.round(cash).toString());
-          setMonthlySavings(Math.round(cash).toString());
+          // snapshot is used for context/progress display only — inputs use hardcoded defaults
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Load failed");
@@ -264,6 +262,12 @@ export default function FirePage() {
   const returnRate = expectedReturn / 100;
   const swrRate = swr / 100;
   const inflRate = inflationRate / 100;
+  const yearsNum = Math.max(0, Math.round(parseFloat(yearsToFire) || 0));
+
+  // Inflation-adjusted target at the planned FIRE year
+  const inflatedTarget = yearsNum > 0
+    ? targetNum * Math.pow(1 + inflRate, yearsNum)
+    : targetNum;
 
   const currentCapital = latest?.totals?.invested || 0;
   const catTotals = latest?.totals?.investedByCategory || {};
@@ -275,23 +279,28 @@ export default function FirePage() {
 
   // ─── Core FIRE math ───────────────────────────────────────────────────────
   const fire = useMemo(() => {
-    const fiNumber = targetNum > 0 ? (targetNum * 12) / swrRate : 0;
+    // Today's FI Number (in today's money)
+    const fiNumberToday = targetNum > 0 ? (targetNum * 12) / swrRate : 0;
+    // Inflation-adjusted FI Number (what you actually need at FIRE year)
+    const fiNumber = inflatedTarget > 0 ? (inflatedTarget * 12) / swrRate : 0;
     const gap = Math.max(0, fiNumber - currentCapital);
     const progressPct = fiNumber > 0 ? clamp((currentCapital / fiNumber) * 100, 0, 150) : 0;
     const monthlyIncomeFromCapital = (currentCapital * swrRate) / 12;
-    const coveragePct = targetNum > 0 ? (monthlyIncomeFromCapital / targetNum) * 100 : 0;
+    const coveragePct = inflatedTarget > 0 ? (monthlyIncomeFromCapital / inflatedTarget) * 100 : 0;
     const alreadyFI = currentCapital >= fiNumber && fiNumber > 0;
 
     // Category contributions to FI Number
     const categories = CATEGORY_META.map((c) => {
       const held = Number(catTotals[c.key]) || 0;
       const contribution = fiNumber > 0 ? (held / fiNumber) * 100 : 0;
-      const fiShare = (held * swrRate) / 12; // monthly income this category alone generates
+      const fiShare = (held * swrRate) / 12;
       return { ...c, held, contribution, fiShare };
     });
 
     return {
       fiNumber,
+      fiNumberToday,
+      inflatedTarget,
       gap,
       progressPct,
       monthlyIncomeFromCapital,
@@ -299,7 +308,7 @@ export default function FirePage() {
       alreadyFI,
       categories,
     };
-  }, [targetNum, swrRate, currentCapital, catTotals]);
+  }, [targetNum, inflatedTarget, swrRate, currentCapital, catTotals]);
 
   // ─── Projection: years to FIRE ────────────────────────────────────────────
   const projection = useMemo(() => {
@@ -414,7 +423,7 @@ export default function FirePage() {
               {/* Monthly income target */}
               <div className="fire-input-group">
                 <label htmlFor="fire-monthly-target">
-                  Monthly income target <span>(LKR)</span>
+                  Monthly income target <span>(LKR, today&apos;s money)</span>
                 </label>
                 <input
                   id="fire-monthly-target"
@@ -428,6 +437,29 @@ export default function FirePage() {
                 />
                 <span className="fire-input-hint">
                   Annual: {formatLKR(targetNum * 12)}
+                </span>
+              </div>
+
+              {/* Years until FIRE */}
+              <div className="fire-input-group">
+                <label htmlFor="fire-years">
+                  Years until FIRE <span>(for inflation adj.)</span>
+                </label>
+                <input
+                  id="fire-years"
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={1}
+                  className="glass-input fire-number-input"
+                  value={yearsToFire}
+                  onChange={(e) => setYearsToFire(e.target.value)}
+                  placeholder="e.g. 10"
+                />
+                <span className="fire-input-hint fire-hint-inflated">
+                  {yearsNum > 0 && targetNum > 0
+                    ? <>Inflated target: <strong>{formatLKR(inflatedTarget)}/mo</strong> at {yearsNum}Y</>
+                    : "Set to 0 to use today\'s target"}
                 </span>
               </div>
 
@@ -464,7 +496,7 @@ export default function FirePage() {
                     </button>
                   ))}
                 </div>
-                <span className="fire-input-hint">FI Number = target × 12 / SWR</span>
+                <span className="fire-input-hint">FI Number = inflated target × 12 / SWR</span>
               </div>
 
               {/* Expected portfolio return */}
@@ -537,11 +569,22 @@ export default function FirePage() {
 
               {/* KPI grid */}
               <div className="fire-kpi-grid">
-                <div className="fire-kpi">
-                  <span>FI Number</span>
+                <div className="fire-kpi fire-kpi-highlight">
+                  <span>Inflation-adj. FI Number</span>
                   <strong style={{ color: fireColor }}>{formatLKR(fire.fiNumber)}</strong>
-                  <em>Capital needed for FIRE</em>
+                  <em>
+                    {yearsNum > 0
+                      ? `At ${yearsNum}Y, ${inflationRate.toFixed(0)}% inflation — this is your real target`
+                      : "Capital needed for FIRE (today's money)"}
+                  </em>
                 </div>
+                {yearsNum > 0 && (
+                  <div className="fire-kpi">
+                    <span>FI Number (today)</span>
+                    <strong style={{ color: "#9ca3af" }}>{formatLKR(fire.fiNumberToday)}</strong>
+                    <em>Without inflation adjustment</em>
+                  </div>
+                )}
                 <div className="fire-kpi">
                   <span>Current capital</span>
                   <strong style={{ color: "#00f2fe" }}>{formatLKR(currentCapital)}</strong>
@@ -575,7 +618,11 @@ export default function FirePage() {
                   >
                     {fire.coveragePct.toFixed(1)}%
                   </strong>
-                  <em>of your target covered</em>
+                  <em>
+                    {yearsNum > 0
+                      ? `of inflation-adj. target (${formatLKR(fire.inflatedTarget)}/mo)`
+                      : "of your target covered"}
+                  </em>
                 </div>
                 <div className="fire-kpi">
                   <span>Actual cash /mo</span>
@@ -596,7 +643,7 @@ export default function FirePage() {
                   <strong style={{ color: fireColor }}>
                     {Math.min(fire.progressPct, 100).toFixed(1)}%
                   </strong>
-                  <em>Toward FI Number</em>
+                  <em>Toward inflation-adj. FI Number</em>
                 </div>
               </div>
             </div>
@@ -1024,9 +1071,15 @@ export default function FirePage() {
 
         .fire-inputs-grid {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
           gap: 1rem;
           margin-bottom: 1rem;
+        }
+
+        @media (max-width: 1200px) {
+          .fire-inputs-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
         }
 
         @media (max-width: 1100px) {
@@ -1072,6 +1125,15 @@ export default function FirePage() {
           font-size: 0.68rem;
           color: var(--text-muted);
           font-weight: 600;
+        }
+
+        .fire-hint-inflated {
+          color: #f97316 !important;
+        }
+
+        .fire-hint-inflated strong {
+          color: #fb923c;
+          font-weight: 800;
         }
 
         /* SWR toggle */
@@ -1248,6 +1310,11 @@ export default function FirePage() {
 
         .fire-kpi:hover {
           border-color: var(--border-color-hover);
+        }
+
+        .fire-kpi.fire-kpi-highlight {
+          border-color: rgba(249, 115, 22, 0.4);
+          background: linear-gradient(135deg, rgba(249,115,22,0.08) 0%, rgba(255,255,255,0.02) 100%);
         }
 
         .fire-kpi span {
