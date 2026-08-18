@@ -283,16 +283,33 @@ export default function FirePage() {
     const fiNumberToday = targetNum > 0 ? (targetNum * 12) / swrRate : 0;
     // Inflation-adjusted FI Number (what you actually need at FIRE year)
     const fiNumber = inflatedTarget > 0 ? (inflatedTarget * 12) / swrRate : 0;
-    const gap = Math.max(0, fiNumber - currentCapital);
-    const progressPct = fiNumber > 0 ? clamp((currentCapital / fiNumber) * 100, 0, 150) : 0;
+    
+    // Calculate capital at target FIRE year
+    const capitalAtTarget = futureValue(currentCapital, returnRate, savingsNum, yearsNum);
+    const gapAtTarget = Math.max(0, fiNumber - capitalAtTarget);
+    const possibleAtTarget = capitalAtTarget >= fiNumber && fiNumber > 0;
+    
+    // Calculate minimum years to FIRE
+    let minYearsToFire: number | null = null;
+    for (let y = 0; y <= 60; y++) {
+      const cap = futureValue(currentCapital, returnRate, savingsNum, y);
+      const fi = targetNum > 0 ? (targetNum * Math.pow(1 + inflRate, y) * 12) / swrRate : 0;
+      if (cap >= fi && fi > 0) {
+        minYearsToFire = y;
+        break;
+      }
+    }
+
+    const gap = Math.max(0, fiNumberToday - currentCapital);
+    const progressPct = fiNumberToday > 0 ? clamp((currentCapital / fiNumberToday) * 100, 0, 150) : 0;
     const monthlyIncomeFromCapital = (currentCapital * swrRate) / 12;
-    const coveragePct = inflatedTarget > 0 ? (monthlyIncomeFromCapital / inflatedTarget) * 100 : 0;
-    const alreadyFI = currentCapital >= fiNumber && fiNumber > 0;
+    const coveragePct = targetNum > 0 ? (monthlyIncomeFromCapital / targetNum) * 100 : 0;
+    const alreadyFI = currentCapital >= fiNumberToday && fiNumberToday > 0;
 
     // Category contributions to FI Number
     const categories = CATEGORY_META.map((c) => {
       const held = Number(catTotals[c.key]) || 0;
-      const contribution = fiNumber > 0 ? (held / fiNumber) * 100 : 0;
+      const contribution = fiNumberToday > 0 ? (held / fiNumberToday) * 100 : 0;
       const fiShare = (held * swrRate) / 12;
       return { ...c, held, contribution, fiShare };
     });
@@ -301,6 +318,10 @@ export default function FirePage() {
       fiNumber,
       fiNumberToday,
       inflatedTarget,
+      capitalAtTarget,
+      gapAtTarget,
+      possibleAtTarget,
+      minYearsToFire,
       gap,
       progressPct,
       monthlyIncomeFromCapital,
@@ -308,19 +329,40 @@ export default function FirePage() {
       alreadyFI,
       categories,
     };
-  }, [targetNum, inflatedTarget, swrRate, currentCapital, catTotals]);
+  }, [targetNum, inflatedTarget, swrRate, currentCapital, catTotals, returnRate, savingsNum, inflRate, yearsNum]);
 
   // ─── Projection: years to FIRE ────────────────────────────────────────────
   const projection = useMemo(() => {
     const points: ProjectionPoint[] = [];
     let fireYear: number | null = null;
+    let simCapital = currentCapital;
 
     for (let y = 0; y <= PROJECTION_YEARS; y++) {
-      const capital = futureValue(currentCapital, returnRate, savingsNum, y);
-      const fiNumber = fire.fiNumber;
-      const achieved = fiNumber > 0 && capital >= fiNumber;
+      const currentFiNumber = targetNum > 0 ? (targetNum * Math.pow(1 + inflRate, y) * 12) / swrRate : 0;
+      
+      let capital = 0;
+      if (y === 0) {
+        capital = currentCapital;
+        simCapital = currentCapital;
+      } else if (y <= yearsNum) {
+        // Phase 1: Accumulation up to target FIRE year
+        capital = futureValue(currentCapital, returnRate, savingsNum, y);
+        simCapital = capital;
+      } else {
+        // Phase 2: Retirement (no more savings, withdrawing target)
+        let cap = simCapital;
+        const r = returnRate / 12;
+        const monthlyTargetThisYear = targetNum * Math.pow(1 + inflRate, y);
+        for(let m = 0; m < 12; m++) {
+           cap = cap * (1 + r) - monthlyTargetThisYear;
+        }
+        capital = Math.max(0, cap);
+        simCapital = capital;
+      }
+
+      const achieved = currentFiNumber > 0 && capital >= currentFiNumber;
       const monthlyIncome = (capital * swrRate) / 12;
-      const gap = Math.max(0, fiNumber - capital);
+      const gap = Math.max(0, currentFiNumber - capital);
 
       if (achieved && fireYear === null) fireYear = y;
 
@@ -328,7 +370,7 @@ export default function FirePage() {
         year: y,
         label: y === 0 ? "Now" : `Y${y}`,
         capital,
-        fiNumber,
+        fiNumber: currentFiNumber,
         monthlyIncome,
         gap,
         achieved,
@@ -339,16 +381,16 @@ export default function FirePage() {
     const milestones = [5, 10, 15, 20, 25, 30]
       .filter((y) => y <= PROJECTION_YEARS)
       .map((y) => {
-        const capital = futureValue(currentCapital, returnRate, savingsNum, y);
+        const p = points.find(pt => pt.year === y);
+        const capital = p ? p.capital : 0;
         const monthlyIncome = (capital * swrRate) / 12;
         const coveragePct = targetNum > 0 ? (monthlyIncome / targetNum) * 100 : 0;
-        // Real (inflation-adjusted) monthly income
         const realMonthly = monthlyIncome / Math.pow(1 + inflRate, y);
         return { year: y, capital, monthlyIncome, coveragePct, realMonthly };
       });
 
     return { points, fireYear, milestones };
-  }, [currentCapital, returnRate, savingsNum, fire.fiNumber, swrRate, targetNum, inflRate]);
+  }, [currentCapital, returnRate, savingsNum, targetNum, inflRate, swrRate, yearsNum]);
 
   // ─── Withdrawal sustainability ────────────────────────────────────────────
   const sustainability = useMemo(() => {
@@ -538,16 +580,60 @@ export default function FirePage() {
           </div>
 
           {/* ══════════════════════════════════════════════════════
-              SECTION 2 — FIRE Progress
+              SECTION 2 — FIRE Verdict & Progress
           ══════════════════════════════════════════════════════ */}
           <div className={`glass-card fire-progress-card ${fire.alreadyFI ? "fi-achieved" : ""}`}>
+            
+            {/* ── Verdict Banner ── */}
             <div className="fire-section-hdr">
+              <Zap size={18} className="fire-section-icon" style={{ color: "#fbbf24" }} />
+              <div>
+                <h3>FIRE Verdict</h3>
+                <p>Is FIRE possible in {yearsNum} years?</p>
+              </div>
+            </div>
+
+            <div className="fire-verdict-grid">
+              <div className="fire-verdict-box">
+                <span className="fv-label">Target FIRE in {yearsNum} years?</span>
+                <strong className={`fv-value ${fire.possibleAtTarget ? "fire-green" : "fire-coral"}`}>
+                  {fire.possibleAtTarget ? "YES" : "NO"}
+                </strong>
+              </div>
+              <div className="fire-verdict-box">
+                <span className="fv-label">{fire.possibleAtTarget ? "Surplus at Target" : "Gap at Target"}</span>
+                <strong className={`fv-value ${fire.possibleAtTarget ? "fire-green" : "fire-coral"}`}>
+                  {formatLKR(fire.gapAtTarget)}
+                </strong>
+              </div>
+              <div className="fire-verdict-box">
+                <span className="fv-label">Minimum years to FIRE</span>
+                <strong className="fv-value" style={{ color: "#00f2fe" }}>
+                  {fire.minYearsToFire !== null ? `${fire.minYearsToFire} years` : "60+ years"}
+                </strong>
+              </div>
+            </div>
+            
+            <div className="fire-verdict-details">
+              <div className="fvd-item">
+                <span>Projected Capital at {yearsNum}Y</span>
+                <strong>{formatLKR(fire.capitalAtTarget)}</strong>
+              </div>
+              <div className="fvd-item">
+                <span>Required FI Number at {yearsNum}Y</span>
+                <strong>{formatLKR(fire.fiNumber)}</strong>
+              </div>
+            </div>
+
+            <hr className="fire-divider" />
+
+            {/* ── Current Snapshot Progress ── */}
+            <div className="fire-section-hdr" style={{ marginTop: "1.5rem" }}>
               <Target size={18} className="fire-section-icon" />
               <div>
-                <h3>FIRE progress — latest snapshot</h3>
+                <h3>Current Snapshot Progress</h3>
                 <p>
-                  Based on {formatLKR(currentCapital)} invested capital at a{" "}
-                  {swr}% safe withdrawal rate.
+                  Based on {formatLKR(currentCapital)} invested capital today.
                 </p>
               </div>
             </div>
@@ -555,9 +641,9 @@ export default function FirePage() {
             {fire.alreadyFI && (
               <div className="fire-fi-banner">
                 <CheckCircle2 size={20} />
-                <strong>You&apos;ve reached Financial Independence!</strong> Your portfolio
+                <strong>You&apos;ve reached Financial Independence (Today)!</strong> Your portfolio
                 already generates {formatLKR(fire.monthlyIncomeFromCapital)}/mo at {swr}% SWR —
-                above your target of {formatLKR(targetNum)}/mo.
+                above your current target of {formatLKR(targetNum)}/mo.
               </div>
             )}
 
@@ -574,8 +660,8 @@ export default function FirePage() {
                   <strong style={{ color: fireColor }}>{formatLKR(fire.fiNumber)}</strong>
                   <em>
                     {yearsNum > 0
-                      ? `At ${yearsNum}Y, ${inflationRate.toFixed(0)}% inflation — this is your real target`
-                      : "Capital needed for FIRE (today's money)"}
+                      ? `At ${yearsNum}Y, ${inflationRate.toFixed(0)}% inflation`
+                      : "Capital needed for FIRE"}
                   </em>
                 </div>
                 {yearsNum > 0 && (
@@ -591,7 +677,7 @@ export default function FirePage() {
                   <em>Latest snapshot invested</em>
                 </div>
                 <div className="fire-kpi">
-                  <span>Gap to FIRE</span>
+                  <span>Gap to FIRE (today)</span>
                   <strong className={fire.alreadyFI ? "fire-green" : "fire-coral"}>
                     {fire.alreadyFI ? "🔥 FI!" : formatLKR(fire.gap)}
                   </strong>
@@ -1222,6 +1308,108 @@ export default function FirePage() {
           flex-shrink: 0;
           margin-top: 2px;
         }
+
+        .fire-kpi span {
+          font-size: 0.63rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--text-muted);
+          margin-bottom: 0.4rem;
+        }
+
+        .fire-kpi strong {
+          font-size: 1.4rem;
+          font-family: var(--font-display);
+          font-weight: 800;
+          color: #f3f4f6;
+        }
+
+        .fire-kpi em {
+          font-style: normal;
+          font-size: 0.65rem;
+          color: var(--text-muted);
+          margin-top: 0.4rem;
+          font-weight: 600;
+        }
+
+        /* ── Verdict UI ── */
+        .fire-verdict-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1rem;
+          margin: 1.5rem 0;
+        }
+        
+        @media (max-width: 800px) {
+          .fire-verdict-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        .fire-verdict-box {
+          background: rgba(255,255,255,0.03);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 1.2rem;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          justify-content: center;
+        }
+
+        .fv-label {
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: var(--text-muted);
+          margin-bottom: 0.5rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .fv-value {
+          font-size: 1.8rem;
+          font-weight: 800;
+          font-family: var(--font-display);
+        }
+
+        .fire-verdict-details {
+          display: flex;
+          justify-content: space-around;
+          background: rgba(0,0,0,0.2);
+          padding: 1rem;
+          border-radius: 8px;
+          margin-bottom: 1.5rem;
+        }
+
+        .fvd-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .fvd-item span {
+          font-size: 0.75rem;
+          color: var(--text-muted);
+          font-weight: 600;
+        }
+
+        .fvd-item strong {
+          font-size: 1.1rem;
+          color: #f3f4f6;
+          font-family: var(--font-display);
+          font-weight: 700;
+        }
+
+        .fire-divider {
+          border: 0;
+          height: 1px;
+          background: rgba(255,255,255,0.05);
+          margin: 2rem 0;
+        }
+
+        /* ── Milestone Table ── */
 
         .fire-section-hdr h3 {
           margin: 0;
