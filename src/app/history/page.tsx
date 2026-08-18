@@ -23,8 +23,6 @@ import {
   TrendingDown,
   AlertTriangle,
   CheckCircle2,
-  ArrowUpRight,
-  ArrowDownRight,
 } from "lucide-react";
 
 const INFLATION_RATE = 0.06;
@@ -686,49 +684,48 @@ export default function HistoryPage() {
                 <div>
                   <h3>Snapshot-to-snapshot progress</h3>
                   <p>
-                    Income and capital changes between consecutive snapshots.
-                    <span className="hist-legend-inline">
-                      <span style={{ color: "#10b981" }}>■</span> Growth
-                      &nbsp;&nbsp;<span style={{ color: "#f87171" }}>■</span> Decline
-                      &nbsp;&nbsp;<span style={{ color: "#6b7280" }}>■</span> No change
-                    </span>
+                    Income and capital changes between consecutive snapshots —
+                    <span style={{ color: "#10b981", marginLeft: 6 }}>▲ growth</span>
+                    <span style={{ color: "#f87171", marginLeft: 8 }}>▼ decline</span>
+                    <span style={{ color: "#6b7280", marginLeft: 8 }}>— no change</span>
                   </p>
                 </div>
                 <HistoryIcon size={18} className="hist-chart-icon" />
               </div>
 
-              <div className="hist-delta-cards">
-                {snapshotDeltas.map((d, i) => (
-                  <div key={i} className="hist-delta-card">
-                    {/* Period header */}
-                    <div className="hist-delta-card-header">
-                      <span className="hist-delta-card-period">{d.periodLabel}</span>
-                    </div>
-
-                    {/* Income row */}
-                    <div className="hist-delta-section">
-                      <span className="hist-delta-section-label">Income /mo</span>
-                      <div className="hist-delta-chips">
-                        <DeltaChip label="Gross" value={d.grossDelta} />
-                        <DeltaChip label="Net IIT" value={d.netIitDelta} />
-                        <DeltaChip label="Cash" value={d.physicalDelta} />
-                      </div>
-                    </div>
-
-                    {/* Capital row */}
-                    <div className="hist-delta-section">
-                      <span className="hist-delta-section-label">Capital</span>
-                      <div className="hist-delta-chips">
-                        <DeltaChip label="Total" value={d.investedDelta} bold />
-                        <DeltaChip label="FDs" value={d.fdsDelta} accent="#00f2fe" />
-                        <DeltaChip label="UTs" value={d.utsDelta} accent="#10b981" />
-                        <DeltaChip label="Treasury" value={d.treasuryDelta} accent="#818cf8" />
-                        <DeltaChip label="Dividends" value={d.dividendsDelta} accent="#6366f1" />
-                        <DeltaChip label="PFCA" value={d.pfcaFdsDelta} accent="#f43f5e" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="hist-delta-scroll">
+                <table className="hist-delta-tbl">
+                  <thead>
+                    <tr>
+                      <th className="hdt-period">Period</th>
+                      <th>Gross /mo</th>
+                      <th>Net IIT /mo</th>
+                      <th>Cash /mo</th>
+                      <th className="hdt-divider">Capital</th>
+                      <th style={{ color: "#00f2fe" }}>FDs</th>
+                      <th style={{ color: "#10b981" }}>UTs</th>
+                      <th style={{ color: "#818cf8" }}>Treasury</th>
+                      <th style={{ color: "#6366f1" }}>Dividends</th>
+                      <th style={{ color: "#f43f5e" }}>PFCA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snapshotDeltas.map((d, i) => (
+                      <tr key={i}>
+                        <td className="hdt-period">{d.periodLabel}</td>
+                        <DeltaTd value={d.grossDelta} />
+                        <DeltaTd value={d.netIitDelta} />
+                        <DeltaTd value={d.physicalDelta} />
+                        <DeltaTd value={d.investedDelta} divider />
+                        <DeltaTd value={d.fdsDelta} accent="#00f2fe" />
+                        <DeltaTd value={d.utsDelta} accent="#10b981" />
+                        <DeltaTd value={d.treasuryDelta} accent="#818cf8" />
+                        <DeltaTd value={d.dividendsDelta} accent="#6366f1" />
+                        <DeltaTd value={d.pfcaFdsDelta} accent="#f43f5e" />
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -1383,101 +1380,94 @@ export default function HistoryPage() {
           color: var(--text-muted);
         }
 
-        /* ── Snapshot delta cards ── */
-        .hist-legend-inline {
-          margin-left: 0.6rem;
-          font-size: 0.7rem;
-          font-weight: 600;
-          color: var(--text-muted);
-        }
-
-        .hist-delta-cards {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          margin-top: 0.75rem;
-        }
-
-        .hist-delta-card {
-          border: 1px solid var(--border-color);
+        /* ── Snapshot delta table ── */
+        .hist-delta-scroll {
+          overflow-x: auto;
+          margin-top: 0.6rem;
           border-radius: 10px;
-          overflow: hidden;
-          transition: border-color 0.2s;
+          border: 1px solid var(--border-color);
+          /* styled scrollbar */
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255,255,255,0.12) transparent;
         }
 
-        .hist-delta-card:hover {
-          border-color: var(--border-color-hover);
+        .hist-delta-scroll::-webkit-scrollbar {
+          height: 5px;
         }
 
-        .hist-delta-card-header {
-          display: flex;
-          align-items: center;
-          padding: 0.45rem 0.9rem;
-          background: rgba(255, 255, 255, 0.03);
+        .hist-delta-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .hist-delta-scroll::-webkit-scrollbar-thumb {
+          background: rgba(255,255,255,0.12);
+          border-radius: 3px;
+        }
+
+        .hist-delta-tbl {
+          width: 100%;
+          min-width: 860px;
+          border-collapse: collapse;
+          font-size: 0.68rem;
+          font-weight: 600;
+        }
+
+        .hist-delta-tbl thead tr {
+          background: rgba(255,255,255,0.03);
           border-bottom: 1px solid var(--border-color);
         }
 
-        .hist-delta-card-period {
-          font-size: 0.72rem;
-          font-weight: 700;
-          color: var(--text-primary);
-          letter-spacing: 0.01em;
-        }
-
-        .hist-delta-section {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          padding: 0.45rem 0.9rem;
-          flex-wrap: wrap;
-        }
-
-        .hist-delta-section:not(:last-child) {
-          border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        .hist-delta-section-label {
+        .hist-delta-tbl th {
+          padding: 0.5rem 0.75rem;
           font-size: 0.6rem;
-          font-weight: 800;
+          font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.05em;
           color: var(--text-muted);
-          min-width: 60px;
-          flex-shrink: 0;
-        }
-
-        .hist-delta-chips {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 5px;
-        }
-
-        .hist-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          padding: 3px 8px;
-          border-radius: 6px;
-          border: 1px solid;
-          background: rgba(255, 255, 255, 0.03);
+          text-align: right;
           white-space: nowrap;
         }
 
-        .hist-chip-label {
-          font-size: 0.65rem;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.03em;
-          color: var(--text-muted);
+        .hist-delta-tbl th.hdt-period {
+          text-align: left;
         }
 
-        .hist-chip-value {
-          font-size: 0.72rem;
-          font-family: var(--font-display);
-          display: flex;
-          align-items: center;
-          gap: 1px;
+        .hist-delta-tbl th.hdt-divider,
+        .hist-delta-tbl td.hdt-divider {
+          border-left: 1px solid var(--border-color);
         }
+
+        .hist-delta-tbl tbody tr {
+          border-bottom: 1px solid rgba(255,255,255,0.04);
+          transition: background 0.15s;
+        }
+
+        .hist-delta-tbl tbody tr:last-child {
+          border-bottom: none;
+        }
+
+        .hist-delta-tbl tbody tr:hover {
+          background: rgba(255,255,255,0.025);
+        }
+
+        .hist-delta-tbl td {
+          padding: 0.45rem 0.75rem;
+          text-align: right;
+          white-space: nowrap;
+          vertical-align: middle;
+        }
+
+        .hist-delta-tbl td.hdt-period {
+          text-align: left;
+          font-size: 0.68rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          white-space: nowrap;
+        }
+
+        .hdt-pos { color: #10b981; }
+        .hdt-neg { color: #f87171; }
+        .hdt-zero { color: var(--text-muted); }
 
 
         /* ── Inflation erosion ── */
@@ -1780,39 +1770,41 @@ export default function HistoryPage() {
 }
 
 /** Compact chip showing a labelled delta value — hides zero changes */
-function DeltaChip({
-  label,
+/**
+ * A single <td> cell for the delta table.
+ * Shows a compact +K / −K value with colour; renders — for zero.
+ */
+function DeltaTd({
   value,
   accent,
-  bold,
+  divider,
 }: {
-  label: string;
   value: number;
   accent?: string;
-  bold?: boolean;
+  divider?: boolean;
 }) {
   const isPos = value > 0;
   const isNeg = value < 0;
-  if (value === 0) return null; // hide unchanged items
 
-  const signColor = isPos ? "#10b981" : "#f87171";
-  const effectiveColor = accent && (isPos || isNeg) ? accent : signColor;
-  const sign = isPos ? "+" : "";
-  const compact = formatCompact(Math.abs(value));
-  const display = `${sign}${isNeg ? "-" : ""}${compact}`;
+  if (value === 0) {
+    return (
+      <td className={`hdt-zero${divider ? " hdt-divider" : ""}`}>
+        —
+      </td>
+    );
+  }
+
+  const baseColor = isPos ? "#10b981" : "#f87171";
+  const color = accent ? accent : baseColor;
+  const sign = isPos ? "+" : "−";
+  const display = `${sign}${formatCompact(Math.abs(value))}`;
 
   return (
-    <div className="hist-chip" style={{ borderColor: `${effectiveColor}33` }}>
-      <span className="hist-chip-label">{label}</span>
-      <span
-        className="hist-chip-value"
-        style={{ color: effectiveColor, fontWeight: bold ? 800 : 700 }}
-      >
-        {isPos
-          ? <ArrowUpRight size={10} style={{ display: "inline", verticalAlign: "middle" }} />
-          : <ArrowDownRight size={10} style={{ display: "inline", verticalAlign: "middle" }} />}
-        {" "}{display}
-      </span>
-    </div>
+    <td
+      className={`${isPos ? "hdt-pos" : "hdt-neg"}${divider ? " hdt-divider" : ""}`}
+      style={accent ? { color } : undefined}
+    >
+      {display}
+    </td>
   );
 }
