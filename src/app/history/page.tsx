@@ -87,6 +87,7 @@ type SnapshotDelta = {
   netIitDelta: number;
   physicalDelta: number;
   investedDelta: number;
+  totalWealth: number;   // absolute capital at the end snapshot
   fdsDelta: number;
   utsDelta: number;
   treasuryDelta: number;
@@ -299,6 +300,7 @@ export default function HistoryPage() {
         netIitDelta: cur.netIitMonthly - prev.netIitMonthly,
         physicalDelta: cur.physicalCashMonthly - prev.physicalCashMonthly,
         investedDelta: cur.invested - prev.invested,
+        totalWealth: cur.invested,
         fdsDelta: cur.fds - prev.fds,
         utsDelta: cur.uts - prev.uts,
         treasuryDelta: cur.treasury - prev.treasury,
@@ -695,24 +697,38 @@ export default function HistoryPage() {
 
               <div className="hist-delta-scroll">
                 <table className="hist-delta-tbl">
+                  <colgroup>
+                    <col className="hdt-col-period" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-num hdt-col-divider" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-num" />
+                    <col className="hdt-col-wealth" />
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th className="hdt-period">Period</th>
+                      <th className="hdt-left">Period</th>
                       <th>Gross /mo</th>
                       <th>Net IIT /mo</th>
                       <th>Cash /mo</th>
-                      <th className="hdt-divider">Capital</th>
-                      <th style={{ color: "#00f2fe" }}>FDs</th>
-                      <th style={{ color: "#10b981" }}>UTs</th>
-                      <th style={{ color: "#818cf8" }}>Treasury</th>
-                      <th style={{ color: "#6366f1" }}>Dividends</th>
-                      <th style={{ color: "#f43f5e" }}>PFCA</th>
+                      <th className="hdt-divider">Capital Δ</th>
+                      <th style={{ color: "#00f2fe" }}>FDs Δ</th>
+                      <th style={{ color: "#10b981" }}>UTs Δ</th>
+                      <th style={{ color: "#818cf8" }}>Treasury Δ</th>
+                      <th style={{ color: "#6366f1" }}>Dividends Δ</th>
+                      <th style={{ color: "#f43f5e" }}>PFCA Δ</th>
+                      <th className="hdt-wealth-th">Total Wealth</th>
                     </tr>
                   </thead>
                   <tbody>
                     {snapshotDeltas.map((d, i) => (
                       <tr key={i}>
-                        <td className="hdt-period">{d.periodLabel}</td>
+                        <td className="hdt-left hdt-period">{d.to}</td>
                         <DeltaTd value={d.grossDelta} />
                         <DeltaTd value={d.netIitDelta} />
                         <DeltaTd value={d.physicalDelta} />
@@ -722,6 +738,7 @@ export default function HistoryPage() {
                         <DeltaTd value={d.treasuryDelta} accent="#818cf8" />
                         <DeltaTd value={d.dividendsDelta} accent="#6366f1" />
                         <DeltaTd value={d.pfcaFdsDelta} accent="#f43f5e" />
+                        <td className="hdt-wealth-cell">{formatCompact(d.totalWealth)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1386,7 +1403,6 @@ export default function HistoryPage() {
           margin-top: 0.6rem;
           border-radius: 10px;
           border: 1px solid var(--border-color);
-          /* styled scrollbar */
           scrollbar-width: thin;
           scrollbar-color: rgba(255,255,255,0.12) transparent;
         }
@@ -1406,11 +1422,18 @@ export default function HistoryPage() {
 
         .hist-delta-tbl {
           width: 100%;
-          min-width: 860px;
+          min-width: 980px;
           border-collapse: collapse;
           font-size: 0.68rem;
           font-weight: 600;
+          table-layout: fixed;
         }
+
+        /* column widths — must match the colgroup order */
+        .hdt-col-period  { width: 100px; }
+        .hdt-col-num     { width: 80px; }
+        .hdt-col-wealth  { width: 100px; }
+        .hdt-col-divider { border-left: 1px solid var(--border-color); }
 
         .hist-delta-tbl thead tr {
           background: rgba(255,255,255,0.03);
@@ -1418,17 +1441,20 @@ export default function HistoryPage() {
         }
 
         .hist-delta-tbl th {
-          padding: 0.5rem 0.75rem;
-          font-size: 0.6rem;
+          padding: 0.48rem 0.65rem;
+          font-size: 0.59rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.05em;
           color: var(--text-muted);
           text-align: right;
           white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
-        .hist-delta-tbl th.hdt-period {
+        .hist-delta-tbl th.hdt-left,
+        .hist-delta-tbl td.hdt-left {
           text-align: left;
         }
 
@@ -1451,23 +1477,38 @@ export default function HistoryPage() {
         }
 
         .hist-delta-tbl td {
-          padding: 0.45rem 0.75rem;
+          padding: 0.42rem 0.65rem;
           text-align: right;
           white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
           vertical-align: middle;
+          font-size: 0.68rem;
         }
 
-        .hist-delta-tbl td.hdt-period {
-          text-align: left;
-          font-size: 0.68rem;
+        .hdt-period {
+          font-size: 0.67rem;
           font-weight: 700;
           color: var(--text-primary);
-          white-space: nowrap;
         }
 
         .hdt-pos { color: #10b981; }
         .hdt-neg { color: #f87171; }
         .hdt-zero { color: var(--text-muted); }
+
+        /* Total Wealth column — styled to stand out as absolute value */
+        .hdt-wealth-th {
+          color: #fbbf24 !important;
+          border-left: 1px solid var(--border-color);
+        }
+
+        .hdt-wealth-cell {
+          color: #fbbf24;
+          font-weight: 800;
+          font-family: var(--font-display);
+          border-left: 1px solid var(--border-color);
+          text-align: right;
+        }
 
 
         /* ── Inflation erosion ── */
