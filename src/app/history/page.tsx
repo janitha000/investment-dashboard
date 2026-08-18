@@ -686,40 +686,47 @@ export default function HistoryPage() {
                 <div>
                   <h3>Snapshot-to-snapshot progress</h3>
                   <p>
-                    Income and capital changes between each consecutive snapshot. Green = growth,
-                    red = decline.
+                    Income and capital changes between consecutive snapshots.
+                    <span className="hist-legend-inline">
+                      <span style={{ color: "#10b981" }}>■</span> Growth
+                      &nbsp;&nbsp;<span style={{ color: "#f87171" }}>■</span> Decline
+                      &nbsp;&nbsp;<span style={{ color: "#6b7280" }}>■</span> No change
+                    </span>
                   </p>
                 </div>
                 <HistoryIcon size={18} className="hist-chart-icon" />
               </div>
 
-              <div className="hist-delta-table">
-                {/* Header */}
-                <div className="hist-delta-row hist-delta-header">
-                  <div className="hist-delta-cell hist-delta-period">Period</div>
-                  <div className="hist-delta-cell">Gross /mo</div>
-                  <div className="hist-delta-cell">Net IIT /mo</div>
-                  <div className="hist-delta-cell">Cash /mo</div>
-                  <div className="hist-delta-cell hist-delta-divider">Capital</div>
-                  <div className="hist-delta-cell">FDs</div>
-                  <div className="hist-delta-cell">UTs</div>
-                  <div className="hist-delta-cell">Treasury</div>
-                  <div className="hist-delta-cell">Dividends</div>
-                  <div className="hist-delta-cell">PFCA</div>
-                </div>
-
+              <div className="hist-delta-cards">
                 {snapshotDeltas.map((d, i) => (
-                  <div key={i} className="hist-delta-row">
-                    <div className="hist-delta-cell hist-delta-period">{d.periodLabel}</div>
-                    <DeltaCell value={d.grossDelta} />
-                    <DeltaCell value={d.netIitDelta} />
-                    <DeltaCell value={d.physicalDelta} />
-                    <DeltaCell value={d.investedDelta} divider />
-                    <DeltaCell value={d.fdsDelta} color="#00f2fe" />
-                    <DeltaCell value={d.utsDelta} color="#10b981" />
-                    <DeltaCell value={d.treasuryDelta} color="#818cf8" />
-                    <DeltaCell value={d.dividendsDelta} color="#6366f1" />
-                    <DeltaCell value={d.pfcaFdsDelta} color="#f43f5e" />
+                  <div key={i} className="hist-delta-card">
+                    {/* Period header */}
+                    <div className="hist-delta-card-header">
+                      <span className="hist-delta-card-period">{d.periodLabel}</span>
+                    </div>
+
+                    {/* Income row */}
+                    <div className="hist-delta-section">
+                      <span className="hist-delta-section-label">Income /mo</span>
+                      <div className="hist-delta-chips">
+                        <DeltaChip label="Gross" value={d.grossDelta} />
+                        <DeltaChip label="Net IIT" value={d.netIitDelta} />
+                        <DeltaChip label="Cash" value={d.physicalDelta} />
+                      </div>
+                    </div>
+
+                    {/* Capital row */}
+                    <div className="hist-delta-section">
+                      <span className="hist-delta-section-label">Capital</span>
+                      <div className="hist-delta-chips">
+                        <DeltaChip label="Total" value={d.investedDelta} bold />
+                        <DeltaChip label="FDs" value={d.fdsDelta} accent="#00f2fe" />
+                        <DeltaChip label="UTs" value={d.utsDelta} accent="#10b981" />
+                        <DeltaChip label="Treasury" value={d.treasuryDelta} accent="#818cf8" />
+                        <DeltaChip label="Dividends" value={d.dividendsDelta} accent="#6366f1" />
+                        <DeltaChip label="PFCA" value={d.pfcaFdsDelta} accent="#f43f5e" />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1376,72 +1383,102 @@ export default function HistoryPage() {
           color: var(--text-muted);
         }
 
-        /* ── Snapshot delta table ── */
-        .hist-delta-table {
-          overflow-x: auto;
-          border-radius: 10px;
+        /* ── Snapshot delta cards ── */
+        .hist-legend-inline {
+          margin-left: 0.6rem;
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: var(--text-muted);
+        }
+
+        .hist-delta-cards {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin-top: 0.75rem;
+        }
+
+        .hist-delta-card {
           border: 1px solid var(--border-color);
-          margin-top: 0.5rem;
+          border-radius: 10px;
+          overflow: hidden;
+          transition: border-color 0.2s;
         }
 
-        .hist-delta-row {
-          display: grid;
-          grid-template-columns: 180px repeat(9, minmax(100px, 1fr));
-          gap: 0;
-          min-width: 1100px;
+        .hist-delta-card:hover {
+          border-color: var(--border-color-hover);
         }
 
-        .hist-delta-header {
+        .hist-delta-card-header {
+          display: flex;
+          align-items: center;
+          padding: 0.45rem 0.9rem;
           background: rgba(255, 255, 255, 0.03);
           border-bottom: 1px solid var(--border-color);
         }
 
-        .hist-delta-row:not(.hist-delta-header):not(:last-child) {
+        .hist-delta-card-period {
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          letter-spacing: 0.01em;
+        }
+
+        .hist-delta-section {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 0.45rem 0.9rem;
+          flex-wrap: wrap;
+        }
+
+        .hist-delta-section:not(:last-child) {
           border-bottom: 1px solid rgba(255, 255, 255, 0.04);
         }
 
-        .hist-delta-row:not(.hist-delta-header):hover {
-          background: rgba(255, 255, 255, 0.02);
+        .hist-delta-section-label {
+          font-size: 0.6rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--text-muted);
+          min-width: 60px;
+          flex-shrink: 0;
         }
 
-        .hist-delta-cell {
-          padding: 0.6rem 0.8rem;
-          font-size: 0.72rem;
-          font-weight: 600;
-          color: var(--text-secondary);
+        .hist-delta-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px;
+        }
+
+        .hist-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 3px 8px;
+          border-radius: 6px;
+          border: 1px solid;
+          background: rgba(255, 255, 255, 0.03);
           white-space: nowrap;
         }
 
-        .hist-delta-header .hist-delta-cell {
-          color: var(--text-muted);
-          font-size: 0.63rem;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
+        .hist-chip-label {
+          font-size: 0.65rem;
           font-weight: 700;
-        }
-
-        .hist-delta-period {
-          color: var(--text-primary) !important;
-          font-weight: 700 !important;
-          font-size: 0.72rem !important;
-          min-width: 180px;
-        }
-
-        .hist-delta-divider {
-          border-left: 1px solid var(--border-color);
-        }
-
-        .hist-delta-pos {
-          color: #10b981;
-        }
-
-        .hist-delta-neg {
-          color: #f87171;
-        }
-
-        .hist-delta-zero {
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
           color: var(--text-muted);
         }
+
+        .hist-chip-value {
+          font-size: 0.72rem;
+          font-family: var(--font-display);
+          display: flex;
+          align-items: center;
+          gap: 1px;
+        }
+
 
         /* ── Inflation erosion ── */
         .hist-erosion-card {
@@ -1742,29 +1779,40 @@ export default function HistoryPage() {
   );
 }
 
-/** Renders a delta cell with green/red coloring and +/- prefix */
-function DeltaCell({
+/** Compact chip showing a labelled delta value — hides zero changes */
+function DeltaChip({
+  label,
   value,
-  color,
-  divider,
+  accent,
+  bold,
 }: {
+  label: string;
   value: number;
-  color?: string;
-  divider?: boolean;
+  accent?: string;
+  bold?: boolean;
 }) {
   const isPos = value > 0;
   const isNeg = value < 0;
-  const cls = isPos ? "hist-delta-pos" : isNeg ? "hist-delta-neg" : "hist-delta-zero";
-  const baseColor = isPos ? "#10b981" : isNeg ? "#f87171" : undefined;
-  const effectiveColor = color && (isPos || isNeg) ? color : baseColor;
+  if (value === 0) return null; // hide unchanged items
+
+  const signColor = isPos ? "#10b981" : "#f87171";
+  const effectiveColor = accent && (isPos || isNeg) ? accent : signColor;
+  const sign = isPos ? "+" : "";
+  const compact = formatCompact(Math.abs(value));
+  const display = `${sign}${isNeg ? "-" : ""}${compact}`;
+
   return (
-    <div
-      className={`hist-delta-cell ${cls} ${divider ? "hist-delta-divider" : ""}`}
-      style={effectiveColor ? { color: effectiveColor } : undefined}
-    >
-      {isPos && <ArrowUpRight size={11} style={{ display: "inline", marginRight: 2 }} />}
-      {isNeg && <ArrowDownRight size={11} style={{ display: "inline", marginRight: 2 }} />}
-      {formatDelta(value)}
+    <div className="hist-chip" style={{ borderColor: `${effectiveColor}33` }}>
+      <span className="hist-chip-label">{label}</span>
+      <span
+        className="hist-chip-value"
+        style={{ color: effectiveColor, fontWeight: bold ? 800 : 700 }}
+      >
+        {isPos
+          ? <ArrowUpRight size={10} style={{ display: "inline", verticalAlign: "middle" }} />
+          : <ArrowDownRight size={10} style={{ display: "inline", verticalAlign: "middle" }} />}
+        {" "}{display}
+      </span>
     </div>
   );
 }
