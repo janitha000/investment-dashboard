@@ -275,16 +275,16 @@ export default function StockGainsPage() {
               <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                 <XAxis dataKey="symbol" tick={{ fill: '#6b7280' }} axisLine={{ stroke: '#d1d5db' }} />
-                <YAxis tick={{ fill: '#6b7280' }} axisLine={{ stroke: '#d1d5db' }} tickFormatter={(val) => \`\${(val / 1000)}k\`} />
+                <YAxis tick={{ fill: '#6b7280' }} axisLine={{ stroke: '#d1d5db' }} tickFormatter={(val) => `${(val / 1000)}k`} />
                 <Tooltip
-                  formatter={(value: number) => \`Rs. \${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\`}
+                  formatter={(value: any) => `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                 />
                 <Legend />
                 <Bar dataKey="cost" name="Total Cost" fill="#9ca3af" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="currentValue" name="Current Value" radius={[4, 4, 0, 0]}>
                   {chartData.map((entry, index) => (
-                    <Cell key={\`cell-\${index}\`} fill={entry.gain >= 0 ? '#10b981' : '#ef4444'} />
+                    <Cell key={`cell-${index}`} fill={entry.gain >= 0 ? '#10b981' : '#ef4444'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -305,7 +305,7 @@ export default function StockGainsPage() {
             
             return (
               <div key={stock.id} className="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 relative overflow-hidden">
-                <div className={\`absolute top-0 left-0 w-1 h-full \${metrics.gainPercent !== null ? (metrics.gainPercent >= 0 ? 'bg-green-500' : 'bg-red-500') : 'bg-gray-300'}\`}></div>
+                <div className={`absolute top-0 left-0 w-1 h-full ${metrics.gainPercent !== null ? (metrics.gainPercent >= 0 ? 'bg-green-500' : 'bg-red-500') : 'bg-gray-300'}`}></div>
                 
                 <div className="flex-1">
                   <div className="flex justify-between items-start mb-4">
@@ -345,7 +345,7 @@ export default function StockGainsPage() {
                     <div>
                       <p className="text-gray-500">Gain/Loss</p>
                       {metrics.gainAmount !== null ? (
-                        <p className={\`font-semibold flex items-center gap-1 \${metrics.gainAmount >= 0 ? 'text-green-600' : 'text-red-600'}\`}>
+                        <p className={`font-semibold flex items-center gap-1 ${metrics.gainAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {metrics.gainAmount >= 0 ? '+' : ''}{metrics.gainAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           {metrics.gainAmount >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                         </p>
@@ -358,10 +358,10 @@ export default function StockGainsPage() {
                       <p className="text-gray-500">Returns</p>
                       {metrics.gainPercent !== null && metrics.annualized !== null ? (
                         <div>
-                          <p className={\`font-semibold \${metrics.gainPercent >= 0 ? 'text-green-600' : 'text-red-600'}\`}>
+                          <p className={`font-semibold ${metrics.gainPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {metrics.gainPercent > 0 ? '+' : ''}{metrics.gainPercent.toFixed(2)}% <span className="text-xs font-normal text-gray-500 ml-1">Total</span>
                           </p>
-                          <p className={\`font-medium text-xs mt-0.5 \${metrics.annualized >= 0 ? 'text-green-600' : 'text-red-600'}\`}>
+                          <p className={`font-medium text-xs mt-0.5 ${metrics.annualized >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {metrics.annualized > 0 ? '+' : ''}{metrics.annualized.toFixed(2)}% <span className="font-normal text-gray-500 ml-1">Annualized</span>
                           </p>
                         </div>
