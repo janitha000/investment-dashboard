@@ -212,7 +212,9 @@ export default function StockGainsPage() {
   };
 
   const calculateMetrics = (stock: StockEntry) => {
-    const quantity = stock.totalCost / stock.buyPrice;
+    // The user's Total Cost (Investment) includes the 1.12% buy-side transaction fee.
+    // To find the actual number of shares they own, we must back out this fee:
+    const quantity = stock.totalCost / (stock.buyPrice * 1.0112);
     
     if (stock.currentPrice === undefined) {
       return { quantity, currentTotalValue: null, gainAmount: null, gainPercent: null, annualized: null };
@@ -273,9 +275,9 @@ export default function StockGainsPage() {
 
   const renderAddForm = () => (
     <div className="form-card glass-card">
-      <div className="flex justify-between items-center mb-4">
+      <div className="form-header">
         <h3>{selectedSymbol ? `Add Entry for ${selectedSymbol}` : 'Add New Stock'}</h3>
-        <button onClick={() => setShowAddForm(false)} className="close-btn"><AlertCircle size={18}/> Cancel</button>
+        <button type="button" onClick={() => setShowAddForm(false)} className="close-btn"><AlertCircle size={18}/> Cancel</button>
       </div>
       <form onSubmit={handleAddStock} className="stock-form">
         {!selectedSymbol && (
@@ -362,7 +364,7 @@ export default function StockGainsPage() {
     let cumQty = 0;
     const chartData = sortedStocks.map((s) => {
       cumCost += s.totalCost;
-      cumQty += s.totalCost / s.buyPrice;
+      cumQty += s.totalCost / (s.buyPrice * 1.0112);
       const grossVal = currentPrice ? cumQty * currentPrice : cumCost;
       const netVal = currentPrice ? grossVal - (grossVal * 0.0112) : null;
       
@@ -435,7 +437,7 @@ export default function StockGainsPage() {
           </div>
           
           <div className="price-update-section">
-            <div className="flex justify-between items-center mb-2">
+            <div className="price-header">
               <p className="section-title mb-0">Market Price</p>
               <button 
                 type="button" 
@@ -610,7 +612,9 @@ export default function StockGainsPage() {
           
           .error-banner { display: flex; align-items: center; gap: 10px; color: var(--color-coral); border-color: rgba(248, 113, 113, 0.3); margin-bottom: 2rem; }
           .form-card { margin-bottom: 2rem; }
-          .form-card h3 { margin-bottom: 1.5rem; font-size: 1.2rem; }
+          .form-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+          .form-header h3 { margin: 0; font-size: 1.2rem; }
+          .price-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
           .stock-form { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
           @media (min-width: 640px) { .stock-form { grid-template-columns: repeat(2, 1fr); } }
           @media (min-width: 1024px) { .stock-form { grid-template-columns: repeat(4, 1fr); } }
@@ -618,6 +622,7 @@ export default function StockGainsPage() {
           .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin-top: 1rem; }
           .save-btn { background: rgba(0, 242, 254, 0.15); color: var(--color-teal); border: 1px solid rgba(0, 242, 254, 0.3); padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
           .save-btn:hover:not(:disabled) { background: rgba(0, 242, 254, 0.25); }
+          .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
           .save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
           
           .summary-update-card { display: flex; flex-direction: column; gap: 1.5rem; }
