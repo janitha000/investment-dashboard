@@ -175,6 +175,36 @@ export default function StockGainsPage() {
     setEditPriceVal("");
   };
 
+  const handleFetchPrice = async (symbol: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/stock-price?symbol=${symbol}`);
+      if (!res.ok) throw new Error("Price not found");
+      const d = await res.json();
+      
+      const val = parseFloat(d.price);
+      if (isNaN(val) || val <= 0) throw new Error("Invalid price received");
+
+      const nowStr = new Date().toISOString();
+      const updatedStocks = (data?.stocks || []).map((s) => {
+        if (s.symbol === symbol) {
+          return { ...s, currentPrice: val, lastUpdated: nowStr };
+        }
+        return s;
+      });
+
+      const updatedData = { ...data, stocks: updatedStocks };
+      handleSaveData(updatedData);
+      setEditPriceVal("");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch latest price for " + symbol + " from CSE.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const calculateMetrics = (stock: StockEntry) => {
     const quantity = stock.totalCost / stock.buyPrice;
     
@@ -308,21 +338,40 @@ export default function StockGainsPage() {
       totalCost += s.totalCost;
       totalQty += m.quantity;
       if (m.currentTotalValue) totalValue += m.currentTotalValue;
-      if (m.secFee) totalFees += m.secFee;
+    if (m.secFee) totalFees += m.secFee;
     });
     const totalGain = totalValue > 0 ? totalValue - totalCost : 0;
     const totalGainPercent = totalValue > 0 ? (totalGain / totalCost) * 100 : 0;
 
-    // Chart data for entries
-    const chartData = symbolStocks.map((s, idx) => {
-      const m = calculateMetrics(s);
+    // Chart data for entries (Timeline)
+    const sortedStocks = [...symbolStocks].sort((a, b) => new Date(a.buyDate).getTime() - new Date(b.buyDate).getTime());
+    let cumCost = 0;
+    let cumQty = 0;
+    const chartData = sortedStocks.map((s) => {
+      cumCost += s.totalCost;
+      cumQty += s.totalCost / s.buyPrice;
+      const grossVal = currentPrice ? cumQty * currentPrice : cumCost;
+      const netVal = currentPrice ? grossVal - (grossVal * 0.0112) : null;
+      
       return {
-        name: `Entry ${idx + 1} (${new Date(s.buyDate).toLocaleDateString()})`,
-        cost: s.totalCost,
-        currentValue: m.currentTotalValue || s.totalCost,
-        gain: m.gainAmount || 0,
+        name: new Date(s.buyDate).toLocaleDateString(),
+        timestamp: new Date(s.buyDate).getTime(),
+        cost: cumCost,
+        currentValue: netVal
       };
     });
+
+    if (chartData.length > 0) {
+      const todayTime = new Date().getTime();
+      if (todayTime > chartData[chartData.length - 1].timestamp) {
+        chartData.push({
+          name: "Today",
+          timestamp: todayTime,
+          cost: cumCost,
+          currentValue: currentPrice ? (cumQty * currentPrice * (1 - 0.0112)) : null
+        });
+      }
+    }
 
     return (
       <div className="stock-gains-page">
@@ -373,7 +422,18 @@ export default function StockGainsPage() {
           </div>
           
           <div className="price-update-section">
-            <p className="section-title">Market Price</p>
+            <div className="flex justify-between items-center mb-2">
+              <p className="section-title mb-0">Market Price</p>
+              <button 
+                type="button" 
+                onClick={() => handleFetchPrice(selectedSymbol)} 
+                disabled={saving}
+                className="fetch-api-btn"
+                title="Fetch latest from CSE"
+              >
+                <RefreshCw size={14} className={saving ? 'spin' : ''} /> Fetch
+              </button>
+            </div>
             <form onSubmit={(e) => handleUpdatePriceForSymbol(selectedSymbol, e)} className="update-form">
               <div className="update-inputs">
                 <input
@@ -412,8 +472,8 @@ export default function StockGainsPage() {
                   itemStyle={{ color: '#fff' }}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="cost" name="Total Cost" stroke="#6b7280" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="currentValue" name="Net Current Value" stroke="#00f2fe" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="cost" name="Total Cost Spent" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="currentValue" name="Actual Selling Value" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -521,6 +581,11 @@ export default function StockGainsPage() {
           .small-input { padding: 0.4rem 0.6rem; font-size: 0.85rem; width: 100%; }
           .save-sm-btn { background: rgba(0, 242, 254, 0.15); color: var(--color-teal); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 6px; padding: 0 0.75rem; font-size: 0.85rem; cursor: pointer; }
           .save-sm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+          .fetch-api-btn { display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: var(--text-primary); border-radius: 4px; padding: 0.2rem 0.5rem; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; }
+          .fetch-api-btn:hover:not(:disabled) { background: rgba(255,255,255,0.2); }
+          .fetch-api-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+          .spin { animation: spin 1s linear infinite; }
+          .mb-0 { margin-bottom: 0 !important; }
           .last-updated { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem; }
 
           .overview-card { margin-bottom: 2rem; }
