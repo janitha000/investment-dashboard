@@ -23,8 +23,8 @@ export async function GET(request: Request) {
 
     const data = await res.json();
     
-    // Find the specific symbol in the array
-    const stock = data?.reqTradeSummaries?.find(
+    // Find the specific symbol in the array (note CSE's spelling "Summery")
+    const stock = data?.reqTradeSummery?.find(
       (s: any) => s.symbol.toUpperCase() === symbol.toUpperCase()
     );
 

@@ -464,9 +464,18 @@ export default function StockGainsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
-                <XAxis dataKey="name" tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} />
+                <XAxis 
+                  dataKey="timestamp" 
+                  type="number" 
+                  scale="time" 
+                  domain={['dataMin', 'dataMax']} 
+                  tickFormatter={(tick: any) => new Date(tick).toLocaleDateString()}
+                  tick={{ fill: '#9ca3af' }} 
+                  axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} 
+                />
                 <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} tickFormatter={(val) => `${(val / 1000)}k`} />
                 <Tooltip
+                  labelFormatter={(label: any) => new Date(label).toLocaleDateString()}
                   formatter={(value: any) => `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   contentStyle={{ backgroundColor: '#141b2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
                   itemStyle={{ color: '#fff' }}
@@ -487,13 +496,31 @@ export default function StockGainsPage() {
             const isGain = metrics.gainAmount !== null && metrics.gainAmount >= 0;
             const hasPrice = stock.currentPrice !== undefined;
             
+            const buyDateObj = new Date(stock.buyDate);
+            const daysHeld = Math.floor((new Date().getTime() - buyDateObj.getTime()) / (1000 * 3600 * 24));
+            const yearsHeld = Math.floor(daysHeld / 365);
+            const remDays = daysHeld % 365;
+            let timeAgo = "";
+            if (yearsHeld > 0) {
+              timeAgo = `${yearsHeld}y ${remDays}d ago`;
+            } else if (daysHeld > 0) {
+              timeAgo = `${daysHeld}d ago`;
+            } else {
+              timeAgo = "Today";
+            }
+            
             return (
               <div key={stock.id} className="stock-card glass-card">
                 <div className={`indicator-bar ${hasPrice ? (isGain ? 'gain' : 'loss') : 'neutral'}`}></div>
                 <div className="stock-content">
                   <div className="stock-header">
                     <div>
-                      <h4 style={{ fontSize: '1.1rem', fontWeight: 600 }}>Bought on {new Date(stock.buyDate).toLocaleDateString()}</h4>
+                      <h4 style={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                        Bought on {buyDateObj.toLocaleDateString()}
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 400 }}>
+                          ({timeAgo})
+                        </span>
+                      </h4>
                     </div>
                     <button onClick={() => handleDeleteStock(stock.id)} className="delete-btn" title="Delete entry">
                       <Trash2 size={18} />
