@@ -3,8 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, AlertCircle, ArrowLeft } from "lucide-react";
 import {
-  BarChart,
-  Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -182,7 +182,10 @@ export default function StockGainsPage() {
       return { quantity, currentTotalValue: null, gainAmount: null, gainPercent: null, annualized: null };
     }
 
-    const currentTotalValue = quantity * stock.currentPrice;
+    const grossCurrentValue = quantity * stock.currentPrice;
+    const secFee = grossCurrentValue * 0.0112; // Standard 1.12% CSE/SEC transaction fee
+    const currentTotalValue = grossCurrentValue - secFee;
+    
     const gainAmount = currentTotalValue - stock.totalCost;
     const gainPercent = (gainAmount / stock.totalCost) * 100;
 
@@ -193,7 +196,7 @@ export default function StockGainsPage() {
 
     let annualized = ((Math.pow(currentTotalValue / stock.totalCost, 1 / yearsHeld)) - 1) * 100;
 
-    return { quantity, currentTotalValue, gainAmount, gainPercent, annualized };
+    return { quantity, currentTotalValue, gainAmount, gainPercent, annualized, secFee, grossCurrentValue };
   };
 
   if (loading) {
@@ -299,11 +302,13 @@ export default function StockGainsPage() {
     let totalCost = 0;
     let totalValue = 0;
     let totalQty = 0;
+    let totalFees = 0;
     symbolStocks.forEach(s => {
       const m = calculateMetrics(s);
       totalCost += s.totalCost;
       totalQty += m.quantity;
       if (m.currentTotalValue) totalValue += m.currentTotalValue;
+      if (m.secFee) totalFees += m.secFee;
     });
     const totalGain = totalValue > 0 ? totalValue - totalCost : 0;
     const totalGainPercent = totalValue > 0 ? (totalGain / totalCost) * 100 : 0;
@@ -354,8 +359,9 @@ export default function StockGainsPage() {
               <p className="metric-sub">{totalQty.toFixed(2)} total shares</p>
             </div>
             <div>
-              <p className="metric-label">Total Current Value</p>
+              <p className="metric-label">Total Net Value</p>
               <p className="metric-val">Rs. {totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="metric-sub">After Rs. {totalFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEC fees</p>
             </div>
             <div>
               <p className="metric-label">Total Gain/Loss</p>
@@ -396,7 +402,7 @@ export default function StockGainsPage() {
           <h3>Entry Visualizations</h3>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                 <XAxis dataKey="name" tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} />
                 <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} tickFormatter={(val) => `${(val / 1000)}k`} />
@@ -406,13 +412,9 @@ export default function StockGainsPage() {
                   itemStyle={{ color: '#fff' }}
                 />
                 <Legend />
-                <Bar dataKey="cost" name="Total Cost" fill="#6b7280" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="currentValue" name="Current Value" radius={[4, 4, 0, 0]}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.gain >= 0 ? '#10b981' : '#ef4444'} />
-                  ))}
-                </Bar>
-              </BarChart>
+                <Line type="monotone" dataKey="cost" name="Total Cost" stroke="#6b7280" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="currentValue" name="Net Current Value" stroke="#00f2fe" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -444,9 +446,12 @@ export default function StockGainsPage() {
                       <p className="metric-sub">{metrics.quantity.toFixed(2)} shares @ Rs. {stock.buyPrice}</p>
                     </div>
                     <div className="metric">
-                      <p className="metric-label">Current Value</p>
+                      <p className="metric-label">Net Current Value</p>
                       {metrics.currentTotalValue !== null ? (
-                        <p className="metric-val">Rs. {metrics.currentTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <div>
+                          <p className="metric-val">Rs. {metrics.currentTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          <p className="metric-sub">After Rs. {metrics.secFee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEC fees</p>
+                        </div>
                       ) : (
                         <p className="metric-val not-set">Not set</p>
                       )}
