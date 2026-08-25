@@ -236,8 +236,8 @@ export default function StockGainsPage() {
     const daysHeld = (startOfNow - startOfBuy) / (1000 * 3600 * 24);
     
     let annualized = null;
-    if (daysHeld >= 0) {
-      const yearsHeld = Math.max(daysHeld, 1) / 365; // At least 1 day
+    if (daysHeld > 180) {
+      const yearsHeld = daysHeld / 365;
       annualized = ((Math.pow(currentTotalValue / stock.totalCost, 1 / yearsHeld)) - 1) * 100;
     }
 
@@ -580,14 +580,18 @@ export default function StockGainsPage() {
                     </div>
                     <div className="metric">
                       <p className="metric-label">Returns</p>
-                      {metrics.gainPercent !== null && metrics.annualized !== null ? (
+                      {metrics.gainPercent !== null ? (
                         <div>
                           <p className={`metric-val ${isGain ? 'text-gain' : 'text-loss'}`}>
                             {metrics.gainPercent > 0 ? '+' : ''}{metrics.gainPercent.toFixed(2)}% <span className="sub-label">Total</span>
                           </p>
-                          <p className={`metric-sub ${metrics.annualized >= 0 ? 'text-gain' : 'text-loss'}`}>
-                            {metrics.annualized > 0 ? '+' : ''}{metrics.annualized.toFixed(2)}% <span className="sub-label">Ann.</span>
-                          </p>
+                          {metrics.annualized !== null ? (
+                            <p className={`metric-sub ${metrics.annualized >= 0 ? 'text-gain' : 'text-loss'}`}>
+                              {metrics.annualized > 0 ? '+' : ''}{metrics.annualized.toFixed(2)}% <span className="sub-label">Ann.</span>
+                            </p>
+                          ) : (
+                            <p className="metric-sub text-muted" style={{ opacity: 0.7, fontSize: '0.75rem' }}>Ann. N/A (&lt;180d)</p>
+                          )}
                         </div>
                       ) : (
                         <p className="metric-val not-set">-</p>
