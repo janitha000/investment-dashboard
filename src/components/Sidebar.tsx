@@ -17,6 +17,7 @@ import {
   Layers,
   History,
   Flame,
+  BarChart2,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -32,6 +33,7 @@ export default function Sidebar() {
     { name: "Income Target", href: "/target", icon: Target },
     { name: "History", href: "/history", icon: History },
     { name: "FIRE Analysis", href: "/fire", icon: Flame },
+    { name: "Stock Gains", href: "/stock-gains", icon: BarChart2 },
     { name: "Investment Instruments", href: "/instruments", icon: Layers },
   ];
 

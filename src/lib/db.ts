@@ -92,6 +92,7 @@ export type PortfolioData = {
   treasury: unknown[];
   dividends?: unknown[];
   pfcaFds?: unknown[];
+  stocks?: unknown[];
 };
 
 export type SnapshotRow = {
@@ -115,6 +116,7 @@ export async function getPortfolio(): Promise<PortfolioData> {
     treasury: data.treasury || [],
     dividends: data.dividends || [],
     pfcaFds: data.pfcaFds || [],
+    stocks: data.stocks || [],
   };
 }
 
@@ -126,6 +128,7 @@ export async function savePortfolio(data: PortfolioData): Promise<void> {
     treasury: data.treasury || [],
     dividends: data.dividends || [],
     pfcaFds: data.pfcaFds || [],
+    stocks: data.stocks || [],
   };
   await sql`
     INSERT INTO portfolio_state (id, data, updated_at)

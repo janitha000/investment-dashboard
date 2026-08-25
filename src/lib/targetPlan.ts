@@ -21,7 +21,7 @@ const CATEGORY_MONTHLY_YIELD: CategoryCapitalPlan = {
   uts: 0.105 / 12, // quoted net
   treasury: 0.10 / 12, // no WHT in our model
   dividends: 0.045 / 12,
-  pfcaFds: 0.05 / 12, // USD interest only (physical cash)
+  pfcaFds: (0.05 * 1.05) / 12, // USD interest + capital gain on that interest
 };
 
 const CATEGORY_ORDER: (keyof CategoryCapitalPlan)[] = [
