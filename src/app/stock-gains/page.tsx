@@ -205,6 +205,12 @@ export default function StockGainsPage() {
     }
   };
 
+  const formatDate = (dateInput: any) => {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
   const calculateMetrics = (stock: StockEntry) => {
     const quantity = stock.totalCost / stock.buyPrice;
     
@@ -213,7 +219,8 @@ export default function StockGainsPage() {
     }
 
     const grossCurrentValue = quantity * stock.currentPrice;
-    const secFee = grossCurrentValue * 0.0112; // Standard 1.12% CSE/SEC transaction fee
+    // Total Transaction Cost 1.12% (Brokerage 0.640%, STL 0.300%, CSE 0.084%, SEC 0.072%, CDS 0.024%)
+    const secFee = grossCurrentValue * 0.0112; 
     const currentTotalValue = grossCurrentValue - secFee;
     
     const gainAmount = currentTotalValue - stock.totalCost;
@@ -221,10 +228,16 @@ export default function StockGainsPage() {
 
     const buyDate = new Date(stock.buyDate);
     const now = new Date();
-    const daysHeld = (now.getTime() - buyDate.getTime()) / (1000 * 3600 * 24);
-    const yearsHeld = Math.max(daysHeld / 365, 0.001); // avoid div by zero
-
-    let annualized = ((Math.pow(currentTotalValue / stock.totalCost, 1 / yearsHeld)) - 1) * 100;
+    // Start of days to avoid time zone hours issues
+    const startOfBuy = new Date(buyDate.getFullYear(), buyDate.getMonth(), buyDate.getDate()).getTime();
+    const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const daysHeld = (startOfNow - startOfBuy) / (1000 * 3600 * 24);
+    
+    let annualized = null;
+    if (daysHeld >= 0) {
+      const yearsHeld = Math.max(daysHeld, 1) / 365; // At least 1 day
+      annualized = ((Math.pow(currentTotalValue / stock.totalCost, 1 / yearsHeld)) - 1) * 100;
+    }
 
     return { quantity, currentTotalValue, gainAmount, gainPercent, annualized, secFee, grossCurrentValue };
   };
@@ -354,7 +367,7 @@ export default function StockGainsPage() {
       const netVal = currentPrice ? grossVal - (grossVal * 0.0112) : null;
       
       return {
-        name: new Date(s.buyDate).toLocaleDateString(),
+        name: formatDate(s.buyDate),
         timestamp: new Date(s.buyDate).getTime(),
         cost: cumCost,
         currentValue: netVal
@@ -410,7 +423,7 @@ export default function StockGainsPage() {
             <div>
               <p className="metric-label">Total Net Value</p>
               <p className="metric-val">Rs. {totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              <p className="metric-sub">After Rs. {totalFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEC fees</p>
+              <p className="metric-sub">After Rs. {totalFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Transaction Cost</p>
             </div>
             <div>
               <p className="metric-label">Total Gain/Loss</p>
@@ -451,7 +464,7 @@ export default function StockGainsPage() {
             </form>
             {lastUpdated && (
               <p className="last-updated">
-                Last updated: {new Date(lastUpdated).toLocaleDateString()}
+                Last updated: {formatDate(lastUpdated)}
               </p>
             )}
           </div>
@@ -469,13 +482,13 @@ export default function StockGainsPage() {
                   type="number" 
                   scale="time" 
                   domain={['dataMin', 'dataMax']} 
-                  tickFormatter={(tick: any) => new Date(tick).toLocaleDateString()}
+                  tickFormatter={(tick: any) => formatDate(tick)}
                   tick={{ fill: '#9ca3af' }} 
                   axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} 
                 />
                 <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} tickFormatter={(val) => `${(val / 1000)}k`} />
                 <Tooltip
-                  labelFormatter={(label: any) => new Date(label).toLocaleDateString()}
+                  labelFormatter={(label: any) => formatDate(label)}
                   formatter={(value: any) => `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   contentStyle={{ backgroundColor: '#141b2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
                   itemStyle={{ color: '#fff' }}
@@ -497,16 +510,25 @@ export default function StockGainsPage() {
             const hasPrice = stock.currentPrice !== undefined;
             
             const buyDateObj = new Date(stock.buyDate);
-            const daysHeld = Math.floor((new Date().getTime() - buyDateObj.getTime()) / (1000 * 3600 * 24));
-            const yearsHeld = Math.floor(daysHeld / 365);
-            const remDays = daysHeld % 365;
+            const now = new Date();
+            // Start of days to avoid time zone hours issues
+            const startOfBuy = new Date(buyDateObj.getFullYear(), buyDateObj.getMonth(), buyDateObj.getDate()).getTime();
+            const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            const daysHeld = (startOfNow - startOfBuy) / (1000 * 3600 * 24);
+            
             let timeAgo = "";
-            if (yearsHeld > 0) {
-              timeAgo = `${yearsHeld}y ${remDays}d ago`;
-            } else if (daysHeld > 0) {
-              timeAgo = `${daysHeld}d ago`;
+            if (daysHeld < 0) {
+              timeAgo = `In ${Math.abs(daysHeld)}d`;
             } else {
-              timeAgo = "Today";
+              const yearsHeldObj = Math.floor(daysHeld / 365);
+              const remDays = daysHeld % 365;
+              if (yearsHeldObj > 0) {
+                timeAgo = `${yearsHeldObj}y ${remDays}d ago`;
+              } else if (daysHeld > 0) {
+                timeAgo = `${daysHeld}d ago`;
+              } else {
+                timeAgo = "Today";
+              }
             }
             
             return (
@@ -516,7 +538,7 @@ export default function StockGainsPage() {
                   <div className="stock-header">
                     <div>
                       <h4 style={{ fontSize: '1.1rem', fontWeight: 600 }}>
-                        Bought on {buyDateObj.toLocaleDateString()}
+                        Bought on {formatDate(stock.buyDate)}
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 400 }}>
                           ({timeAgo})
                         </span>
@@ -537,7 +559,7 @@ export default function StockGainsPage() {
                       {metrics.currentTotalValue !== null ? (
                         <div>
                           <p className="metric-val">Rs. {metrics.currentTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                          <p className="metric-sub">After Rs. {metrics.secFee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEC fees</p>
+                          <p className="metric-sub">After Rs. {metrics.secFee?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Transaction Cost</p>
                         </div>
                       ) : (
                         <p className="metric-val not-set">Not set</p>
