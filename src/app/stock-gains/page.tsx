@@ -15,6 +15,8 @@ import {
   Legend,
   ResponsiveContainer,
   Cell,
+  PieChart,
+  Pie,
 } from "recharts";
 
 type StockEntry = {
@@ -496,13 +498,13 @@ export default function StockGainsPage() {
                 <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} tickFormatter={(val) => `${(val / 1000)}k`} />
                 <Tooltip
                   labelFormatter={(label: any) => formatDate(label)}
-                  formatter={(value: any, name: string) => `Rs. ${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  formatter={(value: any) => `Rs. ${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   contentStyle={{ backgroundColor: '#141b2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
                   itemStyle={{ color: '#fff' }}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="cost" name="Total Cost Spent" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="currentValue" name="Actual Selling Value" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="cost" name="Total Cost Spent" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="currentValue" name="Actual Selling Value" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -746,35 +748,86 @@ export default function StockGainsPage() {
       {showAddForm && renderAddForm()}
 
       {uniqueSymbols.length > 0 ? (
-        <div className="symbols-grid">
-          {uniqueSymbols.map(sym => {
-            const symStocks = groupedStocks[sym];
-            let cost = 0;
-            let val = 0;
-            symStocks.forEach(s => {
-              const m = calculateMetrics(s);
-              cost += s.totalCost;
-              if (m.currentTotalValue) val += m.currentTotalValue;
-            });
-            const gain = val > 0 ? val - cost : 0;
-            const isGain = gain >= 0;
+        <>
+          <div className="overview-card glass-card" style={{ marginBottom: '2rem' }}>
+            <h3 style={{ marginBottom: '1.5rem', fontSize: '1.2rem' }}>Portfolio Distribution</h3>
+            <div className="chart-container" style={{ height: '350px', width: '100%' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={uniqueSymbols.map(sym => {
+                      let val = 0;
+                      groupedStocks[sym].forEach(s => {
+                        const m = calculateMetrics(s);
+                        if (m.currentTotalValue) val += m.currentTotalValue;
+                        else val += s.totalCost;
+                      });
+                      return { name: sym, value: val };
+                    })}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={120}
+                    innerRadius={60}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={true}
+                  >
+                    {
+                      uniqueSymbols.map((sym, index) => (
+                        <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'][index % 8]} />
+                      ))
+                    }
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value: any) => `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
+                    contentStyle={{ backgroundColor: '#141b2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="symbols-grid">
+            {uniqueSymbols.map(sym => {
+              const symStocks = groupedStocks[sym];
+              let cost = 0;
+              let val = 0;
+              symStocks.forEach(s => {
+                const m = calculateMetrics(s);
+                cost += s.totalCost;
+                if (m.currentTotalValue) val += m.currentTotalValue;
+              });
+              const gain = val > 0 ? val - cost : 0;
+              const isGain = gain >= 0;
+              const gainRate = cost > 0 ? (gain / cost) * 100 : 0;
 
-            return (
-              <div key={sym} className="symbol-pill glass-card" onClick={() => setSelectedSymbol(sym)}>
-                <div className={`indicator-bar ${val > 0 ? (isGain ? 'gain' : 'loss') : 'neutral'}`}></div>
-                <div className="pill-content">
-                  <h3>{sym}</h3>
-                  <div className="pill-metrics">
-                    <p className="pill-cost">Rs. {cost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-                    <p className={`pill-gain ${val > 0 ? (isGain ? 'text-gain' : 'text-loss') : 'text-neutral'}`}>
-                      {val > 0 ? (isGain ? '+' : '') : ''}{val > 0 ? gain.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '-'}
-                    </p>
+              return (
+                <div key={sym} className="symbol-pill glass-card" onClick={() => setSelectedSymbol(sym)}>
+                  <div className={`indicator-bar ${val > 0 ? (isGain ? 'gain' : 'loss') : 'neutral'}`}></div>
+                  <div className="pill-content">
+                    <h3 style={{ fontSize: '1.4rem', marginBottom: '1.25rem' }}>{sym}</h3>
+                    <div className="pill-metrics" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
+                      <p className="pill-cost" style={{ fontSize: '1.05rem' }}>Cost: Rs. {cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      <p className="pill-value" style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>Value: Rs. {val > 0 ? val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</p>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                        <p className={`pill-gain ${val > 0 ? (isGain ? 'text-gain' : 'text-loss') : 'text-neutral'}`} style={{ fontSize: '1.15rem' }}>
+                          {val > 0 ? (isGain ? '+' : '') : ''}{val > 0 ? gain.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                        </p>
+                        {val > 0 && (
+                          <p className={`pill-gain-rate ${isGain ? 'text-gain' : 'text-loss'}`} style={{ fontSize: '1.15rem', fontWeight: 600 }}>
+                            ({isGain ? '+' : ''}{gainRate.toFixed(2)}%)
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <div className="empty-state glass-card">
           <TrendingUp className="empty-icon" size={48} />
