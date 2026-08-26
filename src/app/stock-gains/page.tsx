@@ -523,7 +523,7 @@ export default function StockGainsPage() {
           <h3 style={{ marginTop: '2rem' }}>Price History</h3>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
                 <XAxis 
                   dataKey="timestamp" 
@@ -534,7 +534,11 @@ export default function StockGainsPage() {
                   tick={{ fill: '#9ca3af' }} 
                   axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} 
                 />
-                <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} />
+                <YAxis 
+                  domain={['auto', 'auto']} 
+                  tick={{ fill: '#9ca3af' }} 
+                  axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} 
+                />
                 <Tooltip
                   labelFormatter={(label: any) => formatDate(label)}
                   formatter={(value: any) => `Rs. ${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -542,11 +546,21 @@ export default function StockGainsPage() {
                   itemStyle={{ color: '#fff' }}
                 />
                 <Legend />
-                <Bar dataKey="buyPrice" name="Buy Price" fill="#3b82f6" maxBarSize={40} />
+                <Line 
+                  type="monotone" 
+                  dataKey="buyPrice" 
+                  name="Buy Price" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2} 
+                  strokeDasharray="5 5"
+                  dot={{ r: 5, fill: '#3b82f6', strokeWidth: 0 }} 
+                  activeDot={{ r: 8 }} 
+                  connectNulls
+                />
                 {currentPrice && (
                   <ReferenceLine y={currentPrice} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" label={{ position: 'top', value: 'Current Price', fill: '#f59e0b', fontSize: 12 }} />
                 )}
-              </BarChart>
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
