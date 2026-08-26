@@ -5,6 +5,9 @@ import { Plus, Trash2, TrendingUp, TrendingDown, RefreshCw, AlertCircle, ArrowLe
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
+  ReferenceLine,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -372,7 +375,8 @@ export default function StockGainsPage() {
         name: formatDate(s.buyDate),
         timestamp: new Date(s.buyDate).getTime(),
         cost: cumCost,
-        currentValue: netVal
+        currentValue: netVal,
+        buyPrice: s.buyPrice
       };
     });
 
@@ -383,7 +387,8 @@ export default function StockGainsPage() {
           name: "Today",
           timestamp: todayTime,
           cost: cumCost,
-          currentValue: currentPrice ? (cumQty * currentPrice * (1 - 0.0112)) : null
+          currentValue: currentPrice ? (cumQty * currentPrice * (1 - 0.0112)) : null,
+          buyPrice: undefined as unknown as number
         });
       }
     }
@@ -491,7 +496,7 @@ export default function StockGainsPage() {
                 <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} tickFormatter={(val) => `${(val / 1000)}k`} />
                 <Tooltip
                   labelFormatter={(label: any) => formatDate(label)}
-                  formatter={(value: any) => `Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  formatter={(value: any, name: string) => `Rs. ${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   contentStyle={{ backgroundColor: '#141b2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
                   itemStyle={{ color: '#fff' }}
                 />
@@ -499,6 +504,36 @@ export default function StockGainsPage() {
                 <Line type="monotone" dataKey="cost" name="Total Cost Spent" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
                 <Line type="monotone" dataKey="currentValue" name="Actual Selling Value" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
               </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <h3 style={{ marginTop: '2rem' }}>Price History</h3>
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
+                <XAxis 
+                  dataKey="timestamp" 
+                  type="number" 
+                  scale="time" 
+                  domain={['dataMin', 'dataMax']} 
+                  tickFormatter={(tick: any) => formatDate(tick)}
+                  tick={{ fill: '#9ca3af' }} 
+                  axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} 
+                />
+                <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} />
+                <Tooltip
+                  labelFormatter={(label: any) => formatDate(label)}
+                  formatter={(value: any) => `Rs. ${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  contentStyle={{ backgroundColor: '#141b2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                />
+                <Legend />
+                <Bar dataKey="buyPrice" name="Buy Price" fill="#3b82f6" maxBarSize={40} />
+                {currentPrice && (
+                  <ReferenceLine y={currentPrice} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" label={{ position: 'top', value: 'Current Price', fill: '#f59e0b', fontSize: 12 }} />
+                )}
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
