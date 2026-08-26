@@ -527,7 +527,7 @@ export default function StockGainsPage() {
                 />
                 <Tooltip
                   labelFormatter={(label: any) => formatDate(label)}
-                  formatter={(value: any, name: string) => {
+                  formatter={(value: any, name: any) => {
                     if (value == null) return ['-', name];
                     return [`Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name];
                   }}
