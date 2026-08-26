@@ -17,6 +17,8 @@ import {
   Cell,
   PieChart,
   Pie,
+  AreaChart,
+  Area,
 } from "recharts";
 
 type StockEntry = {
@@ -495,28 +497,47 @@ export default function StockGainsPage() {
           <h3>Entry Visualizations</h3>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
+              <AreaChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                 <XAxis 
                   dataKey="timestamp" 
                   type="number" 
                   scale="time" 
                   domain={['dataMin', 'dataMax']} 
                   tickFormatter={(tick: any) => formatDate(tick)}
-                  tick={{ fill: '#9ca3af' }} 
-                  axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} 
+                  tick={{ fill: '#9ca3af', fontSize: 12 }} 
+                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} 
+                  tickMargin={10}
                 />
-                <YAxis tick={{ fill: '#9ca3af' }} axisLine={{ stroke: 'rgba(255,255,255,0.2)' }} tickFormatter={(val) => `${(val / 1000)}k`} />
+                <YAxis 
+                  tick={{ fill: '#9ca3af', fontSize: 12 }} 
+                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} 
+                  tickFormatter={(val) => `${(val / 1000)}k`} 
+                  tickMargin={10}
+                />
                 <Tooltip
                   labelFormatter={(label: any) => formatDate(label)}
-                  formatter={(value: any) => `Rs. ${value?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  contentStyle={{ backgroundColor: '#141b2d', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
-                  itemStyle={{ color: '#fff' }}
+                  formatter={(value: any, name: string) => {
+                    if (value == null) return ['-', name];
+                    return [`Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name];
+                  }}
+                  contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', backdropFilter: 'blur(4px)' }}
+                  itemStyle={{ color: '#fff', fontSize: '0.9rem', padding: '2px 0' }}
                 />
-                <Legend />
-                <Line type="monotone" dataKey="cost" name="Total Cost Spent" stroke="#ef4444" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="currentValue" name="Actual Selling Value" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-              </LineChart>
+                <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px' }} />
+                <Area type="stepAfter" dataKey="cost" name="Total Cost Spent" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorCost)" />
+                <Area type="stepAfter" dataKey="currentValue" name="Actual Selling Value" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
 
