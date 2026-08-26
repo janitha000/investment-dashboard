@@ -249,6 +249,17 @@ export default function StockGainsPage() {
     return { quantity, currentTotalValue, gainAmount, gainPercent, annualized, secFee, grossCurrentValue };
   };
 
+  const getGainColorClass = (gainPercent: number | null, isBg = false) => {
+    if (gainPercent === null) return isBg ? 'bg-neutral' : 'text-neutral';
+    if (gainPercent >= 10) return isBg ? 'bg-gain-high' : 'gain-high';
+    if (gainPercent >= 5) return isBg ? 'bg-gain-mid' : 'gain-mid';
+    if (gainPercent > 0) return isBg ? 'bg-gain-low' : 'gain-low';
+    if (gainPercent === 0) return isBg ? 'bg-neutral' : 'text-neutral';
+    if (gainPercent >= -5) return isBg ? 'bg-loss-low' : 'loss-low';
+    if (gainPercent >= -10) return isBg ? 'bg-loss-mid' : 'loss-mid';
+    return isBg ? 'bg-loss-high' : 'loss-high';
+  };
+
   if (loading) {
     return (
       <div className="loading-container">
@@ -436,7 +447,7 @@ export default function StockGainsPage() {
             </div>
             <div>
               <p className="metric-label">Total Gain/Loss</p>
-              <p className={`metric-val flex-val ${totalGain >= 0 ? 'text-gain' : 'text-loss'}`}>
+              <p className={`metric-val flex-val ${getGainColorClass(totalGainPercent)}`}>
                 {totalGain >= 0 ? '+' : ''}{totalGain.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 ({totalGainPercent.toFixed(2)}%)
               </p>
@@ -572,7 +583,7 @@ export default function StockGainsPage() {
             
             return (
               <div key={stock.id} className="stock-card glass-card">
-                <div className={`indicator-bar ${hasPrice ? (isGain ? 'gain' : 'loss') : 'neutral'}`}></div>
+                <div className={`indicator-bar ${getGainColorClass(metrics.gainPercent, true)}`}></div>
                 <div className="stock-content">
                   <div className="stock-header">
                     <div>
@@ -607,7 +618,7 @@ export default function StockGainsPage() {
                     <div className="metric">
                       <p className="metric-label">Gain/Loss</p>
                       {metrics.gainAmount !== null ? (
-                        <p className={`metric-val flex-val ${isGain ? 'text-gain' : 'text-loss'}`}>
+                        <p className={`metric-val flex-val ${getGainColorClass(metrics.gainPercent)}`}>
                           {isGain ? '+' : ''}{metrics.gainAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           {isGain ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                         </p>
@@ -619,11 +630,11 @@ export default function StockGainsPage() {
                       <p className="metric-label">Returns</p>
                       {metrics.gainPercent !== null ? (
                         <div>
-                          <p className={`metric-val ${isGain ? 'text-gain' : 'text-loss'}`}>
+                          <p className={`metric-val ${getGainColorClass(metrics.gainPercent)}`}>
                             {metrics.gainPercent > 0 ? '+' : ''}{metrics.gainPercent.toFixed(2)}% <span className="sub-label">Total</span>
                           </p>
                           {metrics.annualized !== null ? (
-                            <p className={`metric-sub ${metrics.annualized >= 0 ? 'text-gain' : 'text-loss'}`}>
+                            <p className={`metric-sub ${getGainColorClass(metrics.annualized)}`}>
                               {metrics.annualized > 0 ? '+' : ''}{metrics.annualized.toFixed(2)}% <span className="sub-label">Ann.</span>
                             </p>
                           ) : (
@@ -696,6 +707,14 @@ export default function StockGainsPage() {
           .indicator-bar.loss { background: var(--color-coral); }
           .indicator-bar.neutral { background: var(--text-muted); }
           
+          .bg-gain-high { background: #047857 !important; }
+          .bg-gain-mid { background: #10b981 !important; }
+          .bg-gain-low { background: #6ee7b7 !important; }
+          .bg-loss-low { background: #facc15 !important; }
+          .bg-loss-mid { background: #f97316 !important; }
+          .bg-loss-high { background: #ef4444 !important; }
+          .bg-neutral { background: var(--text-muted) !important; }
+
           .stock-content { flex: 1; padding-left: 0.5rem; }
           .stock-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; }
           .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; transition: color 0.2s; }
@@ -708,8 +727,18 @@ export default function StockGainsPage() {
           .metric-val.not-set { color: var(--text-muted); font-style: italic; font-weight: 400; }
           .metric-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; }
           .flex-val { display: flex; align-items: center; gap: 4px; }
+          
+          .gain-high { color: #047857 !important; }
+          .gain-mid { color: #10b981 !important; }
+          .gain-low { color: #6ee7b7 !important; }
+          .loss-low { color: #facc15 !important; }
+          .loss-mid { color: #f97316 !important; }
+          .loss-high { color: #ef4444 !important; }
+          
           .text-gain { color: var(--color-emerald) !important; }
           .text-loss { color: var(--color-coral) !important; }
+          .text-neutral { color: var(--text-muted) !important; }
+          
           .sub-label { font-weight: 400; font-size: 0.7rem; color: var(--text-muted); }
           .flex { display: flex; }
           .items-center { align-items: center; }
@@ -804,7 +833,7 @@ export default function StockGainsPage() {
 
               return (
                 <div key={sym} className="symbol-pill glass-card" onClick={() => setSelectedSymbol(sym)}>
-                  <div className={`indicator-bar ${val > 0 ? (isGain ? 'gain' : 'loss') : 'neutral'}`}></div>
+                  <div className={`indicator-bar ${getGainColorClass(gainRate, true)}`}></div>
                   <div className="pill-content">
                     <h3 style={{ fontSize: '1.4rem', marginBottom: '1.25rem' }}>{sym}</h3>
                     <div className="pill-metrics" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
@@ -812,11 +841,11 @@ export default function StockGainsPage() {
                       <p className="pill-value" style={{ fontSize: '1.05rem', color: 'var(--text-primary)' }}>Value: Rs. {val > 0 ? val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</p>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                        <p className={`pill-gain ${val > 0 ? (isGain ? 'text-gain' : 'text-loss') : 'text-neutral'}`} style={{ fontSize: '1.15rem' }}>
+                        <p className={`pill-gain ${val > 0 ? getGainColorClass(gainRate) : 'text-neutral'}`} style={{ fontSize: '1.15rem' }}>
                           {val > 0 ? (isGain ? '+' : '') : ''}{val > 0 ? gain.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                         </p>
                         {val > 0 && (
-                          <p className={`pill-gain-rate ${isGain ? 'text-gain' : 'text-loss'}`} style={{ fontSize: '1.15rem', fontWeight: 600 }}>
+                          <p className={`pill-gain-rate ${getGainColorClass(gainRate)}`} style={{ fontSize: '1.15rem', fontWeight: 600 }}>
                             ({isGain ? '+' : ''}{gainRate.toFixed(2)}%)
                           </p>
                         )}
@@ -863,11 +892,28 @@ export default function StockGainsPage() {
         .indicator-bar.gain { background: var(--color-emerald); }
         .indicator-bar.loss { background: var(--color-coral); }
         .indicator-bar.neutral { background: var(--text-muted); }
+
+        .bg-gain-high { background: #047857 !important; }
+        .bg-gain-mid { background: #10b981 !important; }
+        .bg-gain-low { background: #6ee7b7 !important; }
+        .bg-loss-low { background: #facc15 !important; }
+        .bg-loss-mid { background: #f97316 !important; }
+        .bg-loss-high { background: #ef4444 !important; }
+        .bg-neutral { background: var(--text-muted) !important; }
+
         .pill-content { padding-left: 0.5rem; }
         .pill-content h3 { font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.75rem; }
         .pill-metrics { display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; }
         .pill-cost { color: var(--text-secondary); }
         .pill-gain { font-weight: 600; }
+        
+        .gain-high { color: #047857 !important; }
+        .gain-mid { color: #10b981 !important; }
+        .gain-low { color: #6ee7b7 !important; }
+        .loss-low { color: #facc15 !important; }
+        .loss-mid { color: #f97316 !important; }
+        .loss-high { color: #ef4444 !important; }
+
         .text-gain { color: var(--color-emerald); }
         .text-loss { color: var(--color-coral); }
         .text-neutral { color: var(--text-muted); }
