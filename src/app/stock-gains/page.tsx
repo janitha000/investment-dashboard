@@ -251,12 +251,12 @@ export default function StockGainsPage() {
 
   const getGainColorClass = (gainPercent: number | null, isBg = false) => {
     if (gainPercent === null) return isBg ? 'bg-neutral' : 'text-neutral';
-    if (gainPercent >= 10) return isBg ? 'bg-gain-high' : 'gain-high';
-    if (gainPercent >= 5) return isBg ? 'bg-gain-mid' : 'gain-mid';
+    if (gainPercent >= 5) return isBg ? 'bg-gain-high' : 'gain-high';
+    if (gainPercent >= 2.5) return isBg ? 'bg-gain-mid' : 'gain-mid';
     if (gainPercent > 0) return isBg ? 'bg-gain-low' : 'gain-low';
     if (gainPercent === 0) return isBg ? 'bg-neutral' : 'text-neutral';
-    if (gainPercent >= -5) return isBg ? 'bg-loss-low' : 'loss-low';
-    if (gainPercent >= -10) return isBg ? 'bg-loss-mid' : 'loss-mid';
+    if (gainPercent >= -2.5) return isBg ? 'bg-loss-low' : 'loss-low';
+    if (gainPercent >= -5) return isBg ? 'bg-loss-mid' : 'loss-mid';
     return isBg ? 'bg-loss-high' : 'loss-high';
   };
 
