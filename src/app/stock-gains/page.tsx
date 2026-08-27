@@ -223,8 +223,19 @@ export default function StockGainsPage() {
     // To find the actual number of shares they own, we must back out this fee:
     const quantity = stock.totalCost / (stock.buyPrice * 1.0112);
     
+    const buyDate = new Date(stock.buyDate);
+    const now = new Date();
+    // Start of days to avoid time zone hours issues
+    const startOfBuy = new Date(buyDate.getFullYear(), buyDate.getMonth(), buyDate.getDate()).getTime();
+    const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const daysHeld = (startOfNow - startOfBuy) / (1000 * 3600 * 24);
+
+    // 10% annualized return
+    const yearsHeldForExpected = daysHeld / 365;
+    const expectedValue10Percent = stock.totalCost * Math.pow(1.10, yearsHeldForExpected);
+    
     if (stock.currentPrice === undefined) {
-      return { quantity, currentTotalValue: null, gainAmount: null, gainPercent: null, annualized: null };
+      return { quantity, currentTotalValue: null, gainAmount: null, gainPercent: null, annualized: null, expectedValue10Percent, differenceFromExpected: null };
     }
 
     const grossCurrentValue = quantity * stock.currentPrice;
@@ -235,20 +246,15 @@ export default function StockGainsPage() {
     const gainAmount = currentTotalValue - stock.totalCost;
     const gainPercent = (gainAmount / stock.totalCost) * 100;
 
-    const buyDate = new Date(stock.buyDate);
-    const now = new Date();
-    // Start of days to avoid time zone hours issues
-    const startOfBuy = new Date(buyDate.getFullYear(), buyDate.getMonth(), buyDate.getDate()).getTime();
-    const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const daysHeld = (startOfNow - startOfBuy) / (1000 * 3600 * 24);
-    
     let annualized = null;
     if (daysHeld > 180) {
       const yearsHeld = daysHeld / 365;
       annualized = ((Math.pow(currentTotalValue / stock.totalCost, 1 / yearsHeld)) - 1) * 100;
     }
 
-    return { quantity, currentTotalValue, gainAmount, gainPercent, annualized, secFee, grossCurrentValue };
+    const differenceFromExpected = currentTotalValue - expectedValue10Percent;
+
+    return { quantity, currentTotalValue, gainAmount, gainPercent, annualized, secFee, grossCurrentValue, expectedValue10Percent, differenceFromExpected };
   };
 
   const getGainColorClass = (gainPercent: number | null, isBg = false) => {
@@ -366,15 +372,18 @@ export default function StockGainsPage() {
     let totalValue = 0;
     let totalQty = 0;
     let totalFees = 0;
+    let totalExpected = 0;
     symbolStocks.forEach(s => {
       const m = calculateMetrics(s);
       totalCost += s.totalCost;
       totalQty += m.quantity;
       if (m.currentTotalValue) totalValue += m.currentTotalValue;
-    if (m.secFee) totalFees += m.secFee;
+      if (m.secFee) totalFees += m.secFee;
+      totalExpected += m.expectedValue10Percent;
     });
     const totalGain = totalValue > 0 ? totalValue - totalCost : 0;
     const totalGainPercent = totalValue > 0 ? (totalGain / totalCost) * 100 : 0;
+    const totalDifferenceFromExpected = totalValue > 0 ? totalValue - totalExpected : 0;
 
     // Chart data for entries (Timeline)
     const sortedStocks = [...symbolStocks].sort((a, b) => new Date(a.buyDate).getTime() - new Date(b.buyDate).getTime());
@@ -453,6 +462,17 @@ export default function StockGainsPage() {
                 {totalGain >= 0 ? '+' : ''}{totalGain.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 ({totalGainPercent.toFixed(2)}%)
               </p>
+            </div>
+            <div>
+              <p className="metric-label">Expected @ 10% Ann.</p>
+              <p className="metric-val">Rs. {totalExpected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              {totalValue > 0 ? (
+                <p className={`metric-sub ${totalDifferenceFromExpected >= 0 ? 'text-gain' : 'text-loss'}`}>
+                  Diff: {totalDifferenceFromExpected >= 0 ? '+' : ''}{totalDifferenceFromExpected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              ) : (
+                <p className="metric-sub text-muted">Diff: N/A</p>
+              )}
             </div>
           </div>
           
@@ -662,6 +682,17 @@ export default function StockGainsPage() {
                       )}
                     </div>
                     <div className="metric">
+                      <p className="metric-label">Expected @ 10%</p>
+                      <p className="metric-val">Rs. {metrics.expectedValue10Percent.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      {metrics.differenceFromExpected !== null ? (
+                        <p className={`metric-sub ${metrics.differenceFromExpected >= 0 ? 'text-gain' : 'text-loss'}`}>
+                          Diff: {metrics.differenceFromExpected >= 0 ? '+' : ''}{metrics.differenceFromExpected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      ) : (
+                        <p className="metric-sub text-muted">Diff: N/A</p>
+                      )}
+                    </div>
+                    <div className="metric">
                       <p className="metric-label">Returns</p>
                       {metrics.gainPercent !== null ? (
                         <div>
@@ -756,7 +787,7 @@ export default function StockGainsPage() {
           .delete-btn:hover { color: var(--color-coral); }
           
           .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-          @media (min-width: 1024px) { .metrics-grid { grid-template-columns: repeat(4, 1fr); } }
+          @media (min-width: 1024px) { .metrics-grid { grid-template-columns: repeat(5, 1fr); } }
           .metric-label { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.3rem; }
           .metric-val { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }
           .metric-val.not-set { color: var(--text-muted); font-style: italic; font-weight: 400; }
