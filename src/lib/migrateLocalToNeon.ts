@@ -22,7 +22,8 @@ export function localDataSummary() {
         (parsed.uts?.length || 0) +
         (parsed.treasury?.length || 0) +
         (parsed.dividends?.length || 0) +
-        (parsed.pfcaFds?.length || 0);
+        (parsed.pfcaFds?.length || 0) +
+        (parsed.stocks?.length || 0);
     }
     const s = localStorage.getItem(LOCAL_KEYS.snapshots);
     if (s) {

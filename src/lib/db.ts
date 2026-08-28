@@ -206,7 +206,8 @@ export async function isPortfolioEmpty(): Promise<boolean> {
     (p.uts?.length || 0) === 0 &&
     (p.treasury?.length || 0) === 0 &&
     (p.dividends?.length || 0) === 0 &&
-    (p.pfcaFds?.length || 0) === 0
+    (p.pfcaFds?.length || 0) === 0 &&
+    (p.stocks?.length || 0) === 0
   );
 }
 

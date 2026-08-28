@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
           treasury: Array.isArray(p.treasury) ? p.treasury : [],
           dividends: Array.isArray(p.dividends) ? p.dividends : [],
           pfcaFds: Array.isArray(p.pfcaFds) ? p.pfcaFds : [],
+          stocks: Array.isArray(p.stocks) ? p.stocks : [],
         });
         result.portfolio = true;
       } else {

@@ -66,6 +66,7 @@ interface PortfolioState {
   treasury: TreasuryInvestment[];
   dividends: DividendInvestment[];
   pfcaFds: PfcaFdInvestment[];
+  stocks?: any[];
 }
 
 /** Point-in-time capture of the full portfolio for history / charting */
@@ -100,7 +101,8 @@ const INITIAL_STATE: PortfolioState = {
   uts: [],
   treasury: [],
   dividends: [],
-  pfcaFds: []
+  pfcaFds: [],
+  stocks: []
 };
 
 export default function PortfolioPage() {
@@ -192,6 +194,7 @@ export default function PortfolioPage() {
               treasury: parsed.treasury || [],
               dividends: parsed.dividends || [],
               pfcaFds: parsed.pfcaFds || [],
+              stocks: parsed.stocks || [],
             });
           }
         }
@@ -780,6 +783,7 @@ export default function PortfolioPage() {
         treasury: p.treasury || [],
         dividends: p.dividends || [],
         pfcaFds: p.pfcaFds || [],
+        stocks: p.stocks || [],
       });
     }
     if (sRes.ok) {

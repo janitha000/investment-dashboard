@@ -7,6 +7,7 @@ export type BackupFile = {
     treasury: unknown[];
     dividends?: unknown[];
     pfcaFds?: unknown[];
+    stocks?: unknown[];
   };
   snapshots: unknown[];
   scenarios: unknown[];
@@ -35,6 +36,7 @@ export function buildBackupFromLocalStorage(): BackupFile {
     treasury: [],
     dividends: [],
     pfcaFds: [],
+    stocks: [],
   });
   const snapshots = safeParse(localStorage.getItem(KEYS.snapshots), [] as unknown[]);
   const scenarios = safeParse(localStorage.getItem(KEYS.scenarios), [] as unknown[]);
