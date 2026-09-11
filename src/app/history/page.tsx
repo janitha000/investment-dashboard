@@ -310,6 +310,51 @@ export default function HistoryPage() {
     });
   }, [chartData]);
 
+  const monthlyInvestments = useMemo(() => {
+    if (chartData.length < 2) return [];
+    
+    const grouped = new Map<string, {
+      monthLabel: string;
+      ts: number;
+      totalDelta: number;
+      fdsDelta: number;
+      utsDelta: number;
+      treasuryDelta: number;
+      dividendsDelta: number;
+      pfcaFdsDelta: number;
+    }>();
+
+    chartData.slice(1).forEach((cur, i) => {
+      const prev = chartData[i];
+      const d = new Date(cur.ts);
+      const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+      
+      if (!grouped.has(yearMonth)) {
+        grouped.set(yearMonth, {
+          monthLabel,
+          ts: d.getTime(),
+          totalDelta: 0,
+          fdsDelta: 0,
+          utsDelta: 0,
+          treasuryDelta: 0,
+          dividendsDelta: 0,
+          pfcaFdsDelta: 0,
+        });
+      }
+      
+      const g = grouped.get(yearMonth)!;
+      g.totalDelta += (cur.invested - prev.invested);
+      g.fdsDelta += (cur.fds - prev.fds);
+      g.utsDelta += (cur.uts - prev.uts);
+      g.treasuryDelta += (cur.treasury - prev.treasury);
+      g.dividendsDelta += (cur.dividends - prev.dividends);
+      g.pfcaFdsDelta += (cur.pfcaFds - prev.pfcaFds);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => a.ts - b.ts);
+  }, [chartData]);
+
   const growthBars = useMemo(() => {
     if (chartData.length < 2) {
       return [
@@ -743,6 +788,38 @@ export default function HistoryPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Part 1.5: Monthly Investments ── */}
+          {monthlyInvestments.length > 0 && (
+            <div className="glass-card hist-chart-card">
+              <div className="hist-chart-hdr">
+                <div>
+                  <h3>Monthly Investment Additions</h3>
+                  <p>
+                    Net new capital added (or withdrawn) per month, broken down by category. 
+                  </p>
+                </div>
+                <TrendingUp size={18} className="hist-chart-icon" />
+              </div>
+              <div className="hist-chart-wrap">
+                <ResponsiveContainer width="100%" height={340}>
+                  <BarChart data={monthlyInvestments} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+                    <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                    <XAxis dataKey="monthLabel" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
+                    <Tooltip content={<LkrTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
+                    <Bar dataKey="fdsDelta" name="Fixed Deposits" stackId="a" fill="#00f2fe" />
+                    <Bar dataKey="utsDelta" name="Unit Trusts" stackId="a" fill="#10b981" />
+                    <Bar dataKey="treasuryDelta" name="Treasury" stackId="a" fill="#818cf8" />
+                    <Bar dataKey="dividendsDelta" name="Dividends" stackId="a" fill="#6366f1" />
+                    <Bar dataKey="pfcaFdsDelta" name="PFCA FDs" stackId="a" fill="#f43f5e" />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             </div>
           )}
