@@ -5,6 +5,7 @@ export type TargetMetrics = {
   netMonthlyIit: number;
   physicalCashMonthly: number;
   monthsToTarget: number;
+  targetMonth?: string | null;
 };
 
 export type CurrentMetrics = {

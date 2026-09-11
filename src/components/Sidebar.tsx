@@ -7,7 +7,6 @@ import { useRates } from "@/context/RatesContext";
 import RatesEditor from "./RatesEditor";
 import {
   TrendingUp,
-  Home,
   Menu,
   X,
   Sliders,
@@ -27,7 +26,6 @@ export default function Sidebar() {
   const [showEditor, setShowEditor] = useState(false);
 
   const menuItems = [
-    { name: "Overview Dashboard", href: "/", icon: Home },
     { name: "My Portfolio", href: "/portfolio", icon: Briefcase },
     { name: "What-If Scenarios", href: "/scenarios", icon: FlaskConical },
     { name: "Income Target", href: "/target", icon: Target },

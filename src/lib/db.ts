@@ -250,6 +250,7 @@ export type TargetData = {
   netMonthlyIit: number;
   physicalCashMonthly: number;
   monthsToTarget: number;
+  targetMonth?: string | null;
   setAt?: string | null;
   plan?: TargetPlan | null;
 };
@@ -259,6 +260,7 @@ export const EMPTY_TARGET: TargetData = {
   netMonthlyIit: 0,
   physicalCashMonthly: 0,
   monthsToTarget: 12,
+  targetMonth: null,
   setAt: null,
   plan: null,
 };
@@ -273,6 +275,7 @@ export async function getTarget(): Promise<TargetData> {
     netMonthlyIit: Number(data.netMonthlyIit) || 0,
     physicalCashMonthly: Number(data.physicalCashMonthly) || 0,
     monthsToTarget: Math.max(1, Number(data.monthsToTarget) || 12),
+    targetMonth: data.targetMonth ?? null,
     setAt: data.setAt ?? null,
     plan: data.plan ?? null,
   };
@@ -285,6 +288,7 @@ export async function saveTarget(data: TargetData): Promise<void> {
     netMonthlyIit: Math.max(0, Number(data.netMonthlyIit) || 0),
     physicalCashMonthly: Math.max(0, Number(data.physicalCashMonthly) || 0),
     monthsToTarget: Math.max(1, Math.round(Number(data.monthsToTarget) || 12)),
+    targetMonth: data.targetMonth ?? null,
     setAt: data.setAt ?? new Date().toISOString(),
     plan: data.plan ?? null,
   };

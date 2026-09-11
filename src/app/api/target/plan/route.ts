@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
       netMonthlyIit: Math.max(0, Number(body.target.netMonthlyIit) || 0),
       physicalCashMonthly: Math.max(0, Number(body.target.physicalCashMonthly) || 0),
       monthsToTarget: Math.max(1, Math.round(Number(body.target.monthsToTarget) || 12)),
+      targetMonth: body.target.targetMonth ?? null,
     };
 
     const current: CurrentMetrics = {
@@ -163,6 +164,7 @@ ${JSON.stringify(heuristic, null, 2)}
         netMonthlyIit: targetMetrics.netMonthlyIit,
         physicalCashMonthly: targetMetrics.physicalCashMonthly,
         monthsToTarget: targetMetrics.monthsToTarget,
+        targetMonth: targetMetrics.targetMonth,
         setAt: existing.setAt || new Date().toISOString(),
         plan,
       });

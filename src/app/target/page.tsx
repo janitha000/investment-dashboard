@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Save,
@@ -80,9 +80,62 @@ export default function TargetPage() {
   const [netMonthlyWht, setNetMonthlyWht] = useState("");
   const [netMonthlyIit, setNetMonthlyIit] = useState("");
   const [physicalCashMonthly, setPhysicalCashMonthly] = useState("");
-  const [monthsToTarget, setMonthsToTarget] = useState("12");
+  const [targetMonth, setTargetMonth] = useState("");
   const [plan, setPlan] = useState<TargetPlan | null>(null);
   const [setAt, setSetAt] = useState<string | null>(null);
+
+  const monthOptions = useMemo(() => {
+    const opts: { value: string; label: string; months: number }[] = [];
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    for (let i = 1; i <= 120; i++) {
+      const d = new Date(currentYear, currentMonth + i, 1);
+      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const monthName = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+      const years = Math.floor(i / 12);
+      const remMonths = i % 12;
+      let durationStr = `${i} mo${i > 1 ? "s" : ""}`;
+      if (i >= 12 && remMonths === 0) {
+        durationStr = `${years} yr${years > 1 ? "s" : ""}`;
+      } else if (i > 12) {
+        durationStr = `${years}y ${remMonths}m`;
+      }
+      opts.push({
+        value: val,
+        label: `${monthName} (${durationStr})`,
+        months: i,
+      });
+    }
+    return opts;
+  }, []);
+
+  const computedMonthsToTarget = useMemo(() => {
+    if (!targetMonth) return 12;
+    const [tYear, tMonth] = targetMonth.split("-").map(Number);
+    if (!tYear || !tMonth) return 12;
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+    const diff = (tYear - curYear) * 12 + (tMonth - 1 - curMonth);
+    return Math.max(1, diff);
+  }, [targetMonth]);
+
+  const availableMonthOptions = useMemo(() => {
+    if (targetMonth && !monthOptions.some((o) => o.value === targetMonth)) {
+      const [y, m] = targetMonth.split("-").map(Number);
+      if (y && m) {
+        const d = new Date(y, m - 1, 1);
+        const name = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+        return [
+          { value: targetMonth, label: `${name} (${computedMonthsToTarget} mo)`, months: computedMonthsToTarget },
+          ...monthOptions,
+        ];
+      }
+    }
+    return monthOptions;
+  }, [monthOptions, targetMonth, computedMonthsToTarget]);
 
   const showFlash = (msg: string) => {
     setFlash(msg);
@@ -103,7 +156,14 @@ export default function TargetPage() {
             setNetMonthlyWht(t.netMonthlyWht ? String(t.netMonthlyWht) : "");
             setNetMonthlyIit(t.netMonthlyIit ? String(t.netMonthlyIit) : "");
             setPhysicalCashMonthly(t.physicalCashMonthly ? String(t.physicalCashMonthly) : "");
-            setMonthsToTarget(String(t.monthsToTarget || 12));
+            if (t.targetMonth) {
+              setTargetMonth(t.targetMonth);
+            } else {
+              const m = Math.max(1, Math.round(Number(t.monthsToTarget) || 12));
+              const now = new Date();
+              const d = new Date(now.getFullYear(), now.getMonth() + m, 1);
+              setTargetMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+            }
             setPlan(t.plan || null);
             setSetAt(t.setAt || null);
           }
@@ -130,7 +190,8 @@ export default function TargetPage() {
     netMonthlyWht: Math.max(0, Number(netMonthlyWht) || 0),
     netMonthlyIit: Math.max(0, Number(netMonthlyIit) || 0),
     physicalCashMonthly: Math.max(0, Number(physicalCashMonthly) || 0),
-    monthsToTarget: Math.max(1, Math.round(Number(monthsToTarget) || 12)),
+    monthsToTarget: computedMonthsToTarget,
+    targetMonth,
   };
 
   const current = {
@@ -281,7 +342,7 @@ export default function TargetPage() {
           <div>
             <h2>Monthly targets</h2>
             <p>
-              Horizon: how many months until you expect to reach these levels.
+              Horizon: select your target month to reach these income levels.
               {setAt && (
                 <span className="target-set-at">
                   {" "}
@@ -334,15 +395,19 @@ export default function TargetPage() {
             />
           </label>
           <label className="target-field">
-            <span>Months to reach target</span>
-            <input
+            <span>Target Month</span>
+            <select
               className="glass-input"
-              type="number"
-              min={1}
-              step={1}
-              value={monthsToTarget}
-              onChange={(e) => setMonthsToTarget(e.target.value)}
-            />
+              style={{ background: "#0d1323" }}
+              value={targetMonth}
+              onChange={(e) => setTargetMonth(e.target.value)}
+            >
+              {availableMonthOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
         {flash && <div className="target-flash">{flash}</div>}

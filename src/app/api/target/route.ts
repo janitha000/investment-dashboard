@@ -25,6 +25,7 @@ export async function PUT(req: NextRequest) {
       netMonthlyIit: Number(body.netMonthlyIit ?? existing.netMonthlyIit) || 0,
       physicalCashMonthly: Number(body.physicalCashMonthly ?? existing.physicalCashMonthly) || 0,
       monthsToTarget: Math.max(1, Math.round(Number(body.monthsToTarget ?? existing.monthsToTarget) || 12)),
+      targetMonth: body.targetMonth !== undefined ? body.targetMonth : existing.targetMonth,
       setAt: new Date().toISOString(),
       // Keep existing plan unless the client explicitly sends one (including null to clear)
       plan: body.plan !== undefined ? body.plan : existing.plan,
