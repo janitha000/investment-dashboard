@@ -130,6 +130,7 @@ function annualizedGrowth(start: number, end: number, startMs: number, endMs: nu
   return (Math.pow(end / start, 1 / years) - 1) * 100;
 }
 
+
 const tooltipStyle = {
   background: "rgba(13, 18, 31, 0.97)",
   border: "1px solid rgba(255,255,255,0.12)",
@@ -185,6 +186,7 @@ function PctTooltip({
     </div>
   );
 }
+
 
 const INCOME_METRICS = [
   { id: "physicalCash", label: "Physical Cash", field: "physicalCashMonthly" as const, color: "#fbbf24" },
@@ -328,6 +330,9 @@ export default function HistoryPage() {
       const prev = chartData[i];
       const d = new Date(cur.ts);
       const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      
+      if (yearMonth === "2026-08") return;
+
       const monthLabel = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
       
       if (!grouped.has(yearMonth)) {
@@ -385,6 +390,7 @@ export default function HistoryPage() {
       mk("PFCA capital", first.pfcaFds, last.pfcaFds),
     ];
   }, [chartData]);
+
 
   /**
    * Inflation erosion data for the two erosion charts.
@@ -813,6 +819,7 @@ export default function HistoryPage() {
                     <Tooltip content={<LkrTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
                     <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
+                    <ReferenceLine y={1000000} stroke="#f87171" strokeDasharray="3 3" />
                     <Bar dataKey="fdsDelta" name="Fixed Deposits" stackId="a" fill="#00f2fe" />
                     <Bar dataKey="utsDelta" name="Unit Trusts" stackId="a" fill="#10b981" />
                     <Bar dataKey="treasuryDelta" name="Treasury" stackId="a" fill="#818cf8" />
@@ -1101,6 +1108,7 @@ export default function HistoryPage() {
               </p>
             )}
           </div>
+
 
           {/* ── Part 3: Forward-looking inflation planner ── */}
           <div className="glass-card hist-chart-card hist-plan-card">
