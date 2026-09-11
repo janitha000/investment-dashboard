@@ -24,7 +24,10 @@ function extractJsonObject(text: string): Record<string, unknown> | null {
     const end = trimmed.lastIndexOf("}");
     if (start >= 0 && end > start) {
       try {
-        return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
+        return JSON.parse(trimmed.slice(start, end + 1)) as Record<
+          string,
+          unknown
+        >;
       } catch {
         return null;
       }
@@ -33,7 +36,10 @@ function extractJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-async function callGemini(apiKey: string, prompt: string): Promise<Record<string, unknown>> {
+async function callGemini(
+  apiKey: string,
+  prompt: string,
+): Promise<Record<string, unknown>> {
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
   const geminiResponse = await fetch(geminiUrl, {
     method: "POST",
@@ -46,13 +52,16 @@ async function callGemini(apiKey: string, prompt: string): Promise<Record<string
 
   if (!geminiResponse.ok) {
     const errText = await geminiResponse.text();
-    throw new Error(`Gemini error ${geminiResponse.status}: ${errText.slice(0, 240)}`);
+    throw new Error(
+      `Gemini error ${geminiResponse.status}: ${errText.slice(0, 240)}`,
+    );
   }
 
   const data = await geminiResponse.json();
   const text =
-    data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || "").join("") ||
-    "";
+    data?.candidates?.[0]?.content?.parts
+      ?.map((p: { text?: string }) => p.text || "")
+      .join("") || "";
   const parsed = extractJsonObject(text);
   if (!parsed) throw new Error("Gemini returned non-JSON plan");
   return parsed;
@@ -65,28 +74,50 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as PlanBody;
     if (!body?.current || !body?.target) {
-      return NextResponse.json({ error: "current and target are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "current and target are required" },
+        { status: 400 },
+      );
     }
 
     const targetMetrics: TargetMetrics = {
       netMonthlyWht: Math.max(0, Number(body.target.netMonthlyWht) || 0),
       netMonthlyIit: Math.max(0, Number(body.target.netMonthlyIit) || 0),
-      physicalCashMonthly: Math.max(0, Number(body.target.physicalCashMonthly) || 0),
-      monthsToTarget: Math.max(1, Math.round(Number(body.target.monthsToTarget) || 12)),
+      physicalCashMonthly: Math.max(
+        0,
+        Number(body.target.physicalCashMonthly) || 0,
+      ),
+      monthsToTarget: Math.max(
+        1,
+        Math.round(Number(body.target.monthsToTarget) || 12),
+      ),
       targetMonth: body.target.targetMonth ?? null,
+      categoryWeights: body.target.categoryWeights ?? null,
     };
 
     const current: CurrentMetrics = {
       netMonthlyWht: Math.max(0, Number(body.current.netMonthlyWht) || 0),
       netMonthlyIit: Math.max(0, Number(body.current.netMonthlyIit) || 0),
-      physicalCashMonthly: Math.max(0, Number(body.current.physicalCashMonthly) || 0),
+      physicalCashMonthly: Math.max(
+        0,
+        Number(body.current.physicalCashMonthly) || 0,
+      ),
       invested: Math.max(0, Number(body.current.invested) || 0),
       investedByCategory: {
         fds: Math.max(0, Number(body.current.investedByCategory?.fds) || 0),
         uts: Math.max(0, Number(body.current.investedByCategory?.uts) || 0),
-        treasury: Math.max(0, Number(body.current.investedByCategory?.treasury) || 0),
-        dividends: Math.max(0, Number(body.current.investedByCategory?.dividends) || 0),
-        pfcaFds: Math.max(0, Number(body.current.investedByCategory?.pfcaFds) || 0),
+        treasury: Math.max(
+          0,
+          Number(body.current.investedByCategory?.treasury) || 0,
+        ),
+        dividends: Math.max(
+          0,
+          Number(body.current.investedByCategory?.dividends) || 0,
+        ),
+        pfcaFds: Math.max(
+          0,
+          Number(body.current.investedByCategory?.pfcaFds) || 0,
+        ),
       },
     };
 
@@ -98,6 +129,14 @@ export async function POST(req: NextRequest) {
     let warning: string | null = null;
 
     if (apiKey) {
+      const w = targetMetrics.categoryWeights || {
+        uts: 32,
+        fds: 28,
+        treasury: 18,
+        dividends: 12,
+        pfcaFds: 10,
+      };
+
       const prompt = `You are a Sri Lankan personal-finance planner for a single-user investor dashboard.
 Return ONLY JSON matching this schema:
 {
@@ -123,6 +162,7 @@ Rules:
 - Currency is LKR. Numbers are absolute LKR (not lakhs/millions labels).
 - additionalCapitalByCategory = EXTRA capital still needed (not current holdings).
 - Prefer a practical mix: UTs for liquidity/yield, FDs for predictable cash (10% WHT at source, credit against progressive IIT), Treasury for sovereign ballast (no personal WHT in this app), dividends for tax-free income, PFCA for FX diversification (interest counts to physical cash; FX valuation does not).
+- User specified target allocation percentages for new capital additions: Fixed Deposits ${w.fds}%, Unit Trusts ${w.uts}%, Treasury ${w.treasury}%, Dividends ${w.dividends}%, PFCA FDs ${w.pfcaFds}%. You MUST strictly proportion additionalCapitalByCategory according to this user mix.
 - Progressive IIT pools FD+UT+Treasury only; only FD WHT is an IIT credit.
 - Horizon: ${targetMetrics.monthsToTarget} months.
 - Keep steps actionable (5-8). Keep assumptions short.
@@ -149,11 +189,16 @@ ${JSON.stringify(heuristic, null, 2)}
         const geminiJson = await callGemini(apiKey, prompt);
         plan = parseGeminiPlan(geminiJson, heuristic);
       } catch (e) {
-        warning = e instanceof Error ? e.message : "Gemini failed; used heuristic plan";
+        warning =
+          e instanceof Error ? e.message : "Gemini failed; used heuristic plan";
+          e instanceof Error
+            ? e.message
+            : "Gemini failed; used heuristic plan";
         plan = heuristic;
       }
     } else {
-      warning = "No Gemini API key — used local heuristic plan. Add a key in Rates customizer or GEMINI_API_KEY.";
+      warning =
+        "No Gemini API key — used local heuristic plan. Add a key in Rates customizer or GEMINI_API_KEY.";
     }
 
     if (body.persist !== false) {
@@ -165,6 +210,7 @@ ${JSON.stringify(heuristic, null, 2)}
         physicalCashMonthly: targetMetrics.physicalCashMonthly,
         monthsToTarget: targetMetrics.monthsToTarget,
         targetMonth: targetMetrics.targetMonth,
+        categoryWeights: targetMetrics.categoryWeights,
         setAt: existing.setAt || new Date().toISOString(),
         plan,
       });

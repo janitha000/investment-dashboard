@@ -69,6 +69,14 @@ function emptyInvested(): CategoryCapitalPlan {
   return { fds: 0, uts: 0, treasury: 0, dividends: 0, pfcaFds: 0 };
 }
 
+const DEFAULT_CATEGORY_WEIGHTS: CategoryCapitalPlan = {
+  uts: 32,
+  fds: 28,
+  treasury: 18,
+  dividends: 12,
+  pfcaFds: 10,
+};
+
 export default function TargetPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -81,6 +89,9 @@ export default function TargetPage() {
   const [netMonthlyIit, setNetMonthlyIit] = useState("");
   const [physicalCashMonthly, setPhysicalCashMonthly] = useState("");
   const [targetMonth, setTargetMonth] = useState("");
+  const [categoryWeights, setCategoryWeights] = useState<CategoryCapitalPlan>(
+    DEFAULT_CATEGORY_WEIGHTS,
+  );
   const [plan, setPlan] = useState<TargetPlan | null>(null);
   const [setAt, setSetAt] = useState<string | null>(null);
 
@@ -93,7 +104,10 @@ export default function TargetPage() {
     for (let i = 1; i <= 120; i++) {
       const d = new Date(currentYear, currentMonth + i, 1);
       const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const monthName = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+      const monthName = d.toLocaleDateString("en-LK", {
+        month: "short",
+        year: "numeric",
+      });
       const years = Math.floor(i / 12);
       const remMonths = i % 12;
       let durationStr = `${i} mo${i > 1 ? "s" : ""}`;
@@ -127,15 +141,36 @@ export default function TargetPage() {
       const [y, m] = targetMonth.split("-").map(Number);
       if (y && m) {
         const d = new Date(y, m - 1, 1);
-        const name = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+        const name = d.toLocaleDateString("en-LK", {
+          month: "short",
+          year: "numeric",
+        });
         return [
-          { value: targetMonth, label: `${name} (${computedMonthsToTarget} mo)`, months: computedMonthsToTarget },
+          {
+            value: targetMonth,
+            label: `${name} (${computedMonthsToTarget} mo)`,
+            months: computedMonthsToTarget,
+          },
           ...monthOptions,
         ];
       }
     }
     return monthOptions;
   }, [monthOptions, targetMonth, computedMonthsToTarget]);
+
+  const totalWeights =
+    (categoryWeights.fds || 0) +
+    (categoryWeights.uts || 0) +
+    (categoryWeights.treasury || 0) +
+    (categoryWeights.dividends || 0) +
+    (categoryWeights.pfcaFds || 0);
+
+  const handleWeightChange = (key: keyof CategoryCapitalPlan, val: number) => {
+    setCategoryWeights((prev) => ({
+      ...prev,
+      [key]: Math.max(0, Math.min(100, Math.round(val))),
+    }));
+  };
 
   const showFlash = (msg: string) => {
     setFlash(msg);
@@ -155,14 +190,27 @@ export default function TargetPage() {
           if (!cancelled) {
             setNetMonthlyWht(t.netMonthlyWht ? String(t.netMonthlyWht) : "");
             setNetMonthlyIit(t.netMonthlyIit ? String(t.netMonthlyIit) : "");
-            setPhysicalCashMonthly(t.physicalCashMonthly ? String(t.physicalCashMonthly) : "");
+            setPhysicalCashMonthly(
+              t.physicalCashMonthly ? String(t.physicalCashMonthly) : "",
+            );
             if (t.targetMonth) {
               setTargetMonth(t.targetMonth);
             } else {
               const m = Math.max(1, Math.round(Number(t.monthsToTarget) || 12));
               const now = new Date();
               const d = new Date(now.getFullYear(), now.getMonth() + m, 1);
-              setTargetMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+              setTargetMonth(
+                `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+              );
+            }
+            if (t.categoryWeights) {
+              setCategoryWeights({
+                fds: Number(t.categoryWeights.fds) ?? DEFAULT_CATEGORY_WEIGHTS.fds,
+                uts: Number(t.categoryWeights.uts) ?? DEFAULT_CATEGORY_WEIGHTS.uts,
+                treasury: Number(t.categoryWeights.treasury) ?? DEFAULT_CATEGORY_WEIGHTS.treasury,
+                dividends: Number(t.categoryWeights.dividends) ?? DEFAULT_CATEGORY_WEIGHTS.dividends,
+                pfcaFds: Number(t.categoryWeights.pfcaFds) ?? DEFAULT_CATEGORY_WEIGHTS.pfcaFds,
+              });
             }
             setPlan(t.plan || null);
             setSetAt(t.setAt || null);
@@ -192,6 +240,7 @@ export default function TargetPage() {
     physicalCashMonthly: Math.max(0, Number(physicalCashMonthly) || 0),
     monthsToTarget: computedMonthsToTarget,
     targetMonth,
+    categoryWeights,
   };
 
   const current = {
@@ -300,7 +349,7 @@ export default function TargetPage() {
       showFlash(
         data.plan?.source === "gemini"
           ? "Plan re-evaluated with Gemini"
-          : "Plan built with local heuristic"
+          : "Plan built with local heuristic",
       );
     } catch (e) {
       showFlash(e instanceof Error ? e.message : "Plan failed");
@@ -312,8 +361,10 @@ export default function TargetPage() {
   const maxCategoryCapital = plan
     ? Math.max(
         1,
-        ...CATEGORY_META.map((c) => plan.additionalCapitalByCategory[c.key] || 0),
-        ...CATEGORY_META.map((c) => current.investedByCategory[c.key] || 0)
+        ...CATEGORY_META.map(
+          (c) => plan.additionalCapitalByCategory[c.key] || 0,
+        ),
+        ...CATEGORY_META.map((c) => current.investedByCategory[c.key] || 0),
       )
     : 1;
 
@@ -331,8 +382,9 @@ export default function TargetPage() {
         <span className="badge badge-teal">Goals</span>
         <h1 className="page-title">Income Target</h1>
         <p className="page-subtitle">
-          Set monthly income targets, track progress against your latest portfolio snapshot, and
-          re-evaluate a practical capital deployment plan when you are ready.
+          Set monthly income targets, track progress against your latest
+          portfolio snapshot, and re-evaluate a practical capital deployment
+          plan when you are ready.
         </p>
       </div>
 
@@ -351,7 +403,12 @@ export default function TargetPage() {
               )}
             </p>
           </div>
-          <button type="button" className="target-save-btn" onClick={handleSave} disabled={saving}>
+          <button
+            type="button"
+            className="target-save-btn"
+            onClick={handleSave}
+            disabled={saving}
+          >
             <Save size={14} />
             {saving ? "Saving…" : "Save Targets"}
           </button>
@@ -435,24 +492,33 @@ export default function TargetPage() {
           <div className="target-baseline-grid">
             <div>
               <span className="lbl">Net /mo (WHT)</span>
-              <strong className="text-emerald">{formatLKR(current.netMonthlyWht)}</strong>
+              <strong className="text-emerald">
+                {formatLKR(current.netMonthlyWht)}
+              </strong>
             </div>
             <div>
               <span className="lbl">Net /mo (IIT)</span>
-              <strong style={{ color: "#d8b4fe" }}>{formatLKR(current.netMonthlyIit)}</strong>
+              <strong style={{ color: "#d8b4fe" }}>
+                {formatLKR(current.netMonthlyIit)}
+              </strong>
             </div>
             <div>
               <span className="lbl">Physical cash /mo</span>
-              <strong style={{ color: "#fbbf24" }}>{formatLKR(current.physicalCashMonthly)}</strong>
+              <strong style={{ color: "#fbbf24" }}>
+                {formatLKR(current.physicalCashMonthly)}
+              </strong>
             </div>
             <div>
               <span className="lbl">Total invested</span>
-              <strong className="text-teal">{formatLKR(current.invested)}</strong>
+              <strong className="text-teal">
+                {formatLKR(current.invested)}
+              </strong>
             </div>
           </div>
         ) : (
           <p className="target-empty-hint">
-            Progress bars need a portfolio snapshot. Open My Portfolio and click Save Snapshot.
+            Progress bars need a portfolio snapshot. Open My Portfolio and click
+            Save Snapshot.
           </p>
         )}
       </div>
@@ -467,19 +533,25 @@ export default function TargetPage() {
           {metrics.map((m) => {
             const achievedPct = pct(m.current, m.target);
             const remaining = Math.max(0, m.target - m.current);
-            const remainingPct = m.target > 0 ? Math.max(0, 100 - achievedPct) : 0;
+            const remainingPct =
+              m.target > 0 ? Math.max(0, 100 - achievedPct) : 0;
             return (
               <div key={m.key} className="target-progress-row">
                 <div className="target-progress-labels">
                   <span className="name">{m.label}</span>
                   <span className="nums">
-                    <strong style={{ color: m.color }}>{formatLKR(m.current)}</strong>
+                    <strong style={{ color: m.color }}>
+                      {formatLKR(m.current)}
+                    </strong>
                     <span className="sep">/</span>
                     <span>{formatLKR(m.target)}</span>
                     <span className="pct-pill">{achievedPct.toFixed(0)}%</span>
                   </span>
                 </div>
-                <div className="target-bar-track" title={`Remaining ${formatLKR(remaining)}`}>
+                <div
+                  className="target-bar-track"
+                  title={`Remaining ${formatLKR(remaining)}`}
+                >
                   <div
                     className="target-bar-achieved"
                     style={{ width: `${achievedPct}%`, background: m.color }}
@@ -491,7 +563,8 @@ export default function TargetPage() {
                 </div>
                 <div className="target-bar-legend">
                   <span>
-                    <i style={{ background: m.color }} /> Achieved {formatLKR(Math.min(m.current, m.target || m.current))}
+                    <i style={{ background: m.color }} /> Achieved{" "}
+                    {formatLKR(Math.min(m.current, m.target || m.current))}
                   </span>
                   <span>
                     <i className="rem" /> Remaining {formatLKR(remaining)}
@@ -509,8 +582,8 @@ export default function TargetPage() {
           <div>
             <h3>Practical guide to reach the target</h3>
             <p className="target-section-sub">
-              Not run automatically — click Re-evaluate when you want a fresh plan (Gemini if a key
-              is configured, otherwise a local heuristic).
+              Not run automatically — click Re-evaluate when you want a fresh
+              plan (Gemini if a key is configured, otherwise a local heuristic).
             </p>
           </div>
           <button
@@ -519,7 +592,11 @@ export default function TargetPage() {
             onClick={handleReevaluate}
             disabled={planning}
           >
-            {planning ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
+            {planning ? (
+              <RefreshCw size={14} className="spin" />
+            ) : (
+              <Sparkles size={14} />
+            )}
             {planning ? "Re-evaluating…" : "Re-evaluate Plan"}
           </button>
         </div>
@@ -531,9 +608,84 @@ export default function TargetPage() {
           </div>
         )}
 
+        {/* Category Target Allocation Input */}
+        <div className="target-weights-box">
+          <div className="target-weights-hdr">
+            <div>
+              <h4>Target Allocation for New Additions</h4>
+              <p className="target-section-sub">
+                Set the percentage of new capital you plan to deploy into each category.
+              </p>
+            </div>
+            <div className={`target-weights-badge ${totalWeights === 100 ? "ok" : "warn"}`}>
+              <span>Total: {totalWeights}%</span>
+              {totalWeights !== 100 && (
+                <button
+                  type="button"
+                  className="target-weights-reset-btn"
+                  onClick={() => setCategoryWeights(DEFAULT_CATEGORY_WEIGHTS)}
+                  title="Reset to default allocation"
+                >
+                  Reset (100%)
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="target-weights-grid">
+            {CATEGORY_META.map((c) => {
+              const Icon = c.icon;
+              const val = categoryWeights[c.key] ?? 0;
+              return (
+                <div key={c.key} className="target-weight-item">
+                  <div className="target-weight-label">
+                    <Icon size={14} style={{ color: c.color }} />
+                    <span>{c.label}</span>
+                  </div>
+                  <div className="target-weight-input-container">
+                    <input
+                      type="number"
+                      className="glass-input target-weight-input"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={val === 0 ? "" : val}
+                      placeholder="0"
+                      onChange={(e) =>
+                        handleWeightChange(c.key, Number(e.target.value) || 0)
+                      }
+                    />
+                    <span className="target-weight-pct">%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Allocation visual mini bar */}
+          <div className="target-weights-bar">
+            {CATEGORY_META.map((c) => {
+              const w = categoryWeights[c.key] || 0;
+              if (w <= 0) return null;
+              const widthPct = totalWeights > 0 ? (w / totalWeights) * 100 : 0;
+              return (
+                <div
+                  key={c.key}
+                  className="target-weights-seg"
+                  style={{ width: `${widthPct}%`, background: c.color }}
+                  title={`${c.label}: ${w}%`}
+                >
+                  {w >= 12 ? `${w}%` : ""}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {!plan ? (
           <p className="target-empty-hint">
-            Save your targets, ensure a snapshot exists, then click Re-evaluate Plan.
+            Save your targets, ensure a snapshot exists, then click Re-evaluate
+            Plan.
           </p>
         ) : (
           <>
@@ -586,8 +738,8 @@ export default function TargetPage() {
             <div className="target-capital-section">
               <h4>Remaining capital by category</h4>
               <p className="target-section-sub">
-                Extra capital suggested for each bucket (not current holdings). Bars scale to the
-                largest category need.
+                Extra capital suggested for each bucket (not current holdings).
+                Bars scale to the largest category need.
               </p>
               <div className="target-capital-list">
                 {CATEGORY_META.map((c) => {
@@ -604,16 +756,28 @@ export default function TargetPage() {
                         <strong>{formatLKR(need)}</strong>
                       </div>
                       <div className="target-capital-bars">
-                        <div className="target-cap-track" title={`Need ${formatLKR(need)}`}>
+                        <div
+                          className="target-cap-track"
+                          title={`Need ${formatLKR(need)}`}
+                        >
                           <div
                             className="target-cap-need"
-                            style={{ width: `${needPct}%`, background: c.color }}
+                            style={{
+                              width: `${needPct}%`,
+                              background: c.color,
+                            }}
                           />
                         </div>
-                        <div className="target-cap-track muted" title={`Held ${formatLKR(held)}`}>
+                        <div
+                          className="target-cap-track muted"
+                          title={`Held ${formatLKR(held)}`}
+                        >
                           <div
                             className="target-cap-held"
-                            style={{ width: `${heldPct}%`, background: c.color }}
+                            style={{
+                              width: `${heldPct}%`,
+                              background: c.color,
+                            }}
                           />
                         </div>
                       </div>
@@ -1027,6 +1191,146 @@ export default function TargetPage() {
           font-size: 0.65rem;
           font-weight: 600;
           color: var(--text-muted);
+        }
+
+        /* ── Target Weights Allocation Box ── */
+        .target-weights-box {
+          padding: 1.1rem 1.25rem;
+          border-radius: 10px;
+          border: 1px solid var(--border-color);
+          background: rgba(255, 255, 255, 0.02);
+          margin-bottom: 1.25rem;
+        }
+
+        .target-weights-hdr {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 1rem;
+          flex-wrap: wrap;
+          margin-bottom: 0.85rem;
+        }
+
+        .target-weights-hdr h4 {
+          margin: 0;
+          font-size: 0.95rem;
+          color: var(--text-primary);
+        }
+
+        .target-weights-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          font-family: var(--font-display);
+        }
+
+        .target-weights-badge.ok {
+          background: rgba(16, 185, 129, 0.15);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .target-weights-badge.warn {
+          background: rgba(251, 191, 36, 0.15);
+          color: #fbbf24;
+          border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+
+        .target-weights-reset-btn {
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          text-decoration: underline;
+          cursor: pointer;
+          font-size: 0.7rem;
+          padding: 0;
+        }
+
+        .target-weights-reset-btn:hover {
+          color: var(--text-primary);
+        }
+
+        .target-weights-grid {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 0.75rem;
+        }
+
+        @media (max-width: 900px) {
+          .target-weights-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 600px) {
+          .target-weights-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        .target-weight-item {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .target-weight-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: var(--text-secondary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .target-weight-input-container {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .target-weight-input {
+          padding: 0.5rem 1.6rem 0.5rem 0.75rem;
+          font-size: 0.9rem;
+          font-weight: 700;
+          height: 38px;
+        }
+
+        .target-weight-pct {
+          position: absolute;
+          right: 10px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: var(--text-muted);
+          pointer-events: none;
+        }
+
+        .target-weights-bar {
+          display: flex;
+          height: 8px;
+          border-radius: 999px;
+          overflow: hidden;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid var(--border-color);
+          margin-top: 0.85rem;
+        }
+
+        .target-weights-seg {
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.6rem;
+          font-weight: 800;
+          color: #04060c;
+          transition: width 0.25s ease;
         }
 
         :global(.spin) {

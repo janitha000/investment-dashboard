@@ -123,7 +123,9 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {isOpen && <div className="sidebar-backdrop" onClick={() => setIsOpen(false)} />}
+      {isOpen && (
+        <div className="sidebar-backdrop" onClick={() => setIsOpen(false)} />
+      )}
 
       {showEditor && <RatesEditor onClose={() => setShowEditor(false)} />}
     </>

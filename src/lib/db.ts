@@ -251,6 +251,7 @@ export type TargetData = {
   physicalCashMonthly: number;
   monthsToTarget: number;
   targetMonth?: string | null;
+  categoryWeights?: CategoryCapitalPlan | null;
   setAt?: string | null;
   plan?: TargetPlan | null;
 };
@@ -261,6 +262,7 @@ export const EMPTY_TARGET: TargetData = {
   physicalCashMonthly: 0,
   monthsToTarget: 12,
   targetMonth: null,
+  categoryWeights: { fds: 28, uts: 32, treasury: 18, dividends: 12, pfcaFds: 10 },
   setAt: null,
   plan: null,
 };
@@ -276,6 +278,7 @@ export async function getTarget(): Promise<TargetData> {
     physicalCashMonthly: Number(data.physicalCashMonthly) || 0,
     monthsToTarget: Math.max(1, Number(data.monthsToTarget) || 12),
     targetMonth: data.targetMonth ?? null,
+    categoryWeights: data.categoryWeights ?? null,
     setAt: data.setAt ?? null,
     plan: data.plan ?? null,
   };
@@ -289,6 +292,7 @@ export async function saveTarget(data: TargetData): Promise<void> {
     physicalCashMonthly: Math.max(0, Number(data.physicalCashMonthly) || 0),
     monthsToTarget: Math.max(1, Math.round(Number(data.monthsToTarget) || 12)),
     targetMonth: data.targetMonth ?? null,
+    categoryWeights: data.categoryWeights ?? null,
     setAt: data.setAt ?? new Date().toISOString(),
     plan: data.plan ?? null,
   };
