@@ -61,10 +61,6 @@ export function buildHeuristicPlan(
   const primaryGap = Math.max(gapCash, gapWht, gapIit);
   const months = Math.max(1, target.monthsToTarget);
 
-  // Capital needed ≈ gap / blended monthly yield (~0.75%/mo ≈ 9% p.a. net)
-  const blendedYield = 0.0075;
-  const totalCapitalNeeded = primaryGap > 0 ? primaryGap / blendedYield : 0;
-  const monthlyContributionNeeded = totalCapitalNeeded / months;
   // Normalize user weights (default to 32% UT, 28% FD, 18% Treasury, 12% Dividends, 10% PFCA)
   const rawWeights = target.categoryWeights || {
     uts: 32,
@@ -74,7 +70,6 @@ export function buildHeuristicPlan(
     pfcaFds: 10,
   };
 
-  // Weight toward categories that help physical cash + WHT, with some IIT-efficient mix
   const totalRaw =
     (rawWeights.uts || 0) +
     (rawWeights.fds || 0) +
@@ -84,11 +79,6 @@ export function buildHeuristicPlan(
 
   const safeTotal = totalRaw > 0 ? totalRaw : 100;
   const weights: CategoryCapitalPlan = {
-    uts: 0.32,
-    fds: 0.28,
-    treasury: 0.18,
-    dividends: 0.12,
-    pfcaFds: 0.1,
     uts: (rawWeights.uts || 0) / safeTotal,
     fds: (rawWeights.fds || 0) / safeTotal,
     treasury: (rawWeights.treasury || 0) / safeTotal,
@@ -123,7 +113,9 @@ export function buildHeuristicPlan(
     additionalCapitalByCategory.dividends * CATEGORY_MONTHLY_YIELD.dividends +
     additionalCapitalByCategory.pfcaFds * CATEGORY_MONTHLY_YIELD.pfcaFds;
 
-  const activeAllocations = (Object.keys(weights) as (keyof CategoryCapitalPlan)[])
+  const activeAllocations = (
+    Object.keys(weights) as (keyof CategoryCapitalPlan)[]
+  )
     .filter((k) => weights[k] > 0)
     .sort((a, b) => weights[b] - weights[a])
     .map((k) => `${CATEGORY_NAMES[k]} (~${Math.round(weights[k] * 100)}%)`);
@@ -133,7 +125,6 @@ export function buildHeuristicPlan(
       ? "Targets are already met on the latest snapshot — maintain allocations and reinvest maturities."
       : `Close a ~LKR ${Math.round(primaryGap).toLocaleString("en-LK")} monthly income gap over ${months} months.`,
     `Deploy about LKR ${Math.round(monthlyContributionNeeded).toLocaleString("en-LK")} of new capital each month (or lump-sum equivalent).`,
-    `Prefer Unit Trusts (~${Math.round(weights.uts * 100)}%) and FDs (~${Math.round(weights.fds * 100)}%) for cash yield; keep Treasury for sovereign ballast.`,
     `Allocate new capital according to your specified percentage mix: ${activeAllocations.join(", ") || "balanced mix"}.`,
     "Remember: only LKR FDs withhold 10% WHT (IIT credit). UT/Treasury/dividends/PFCA do not add personal WHT credit.",
     "Re-save a portfolio snapshot after each material deployment so progress bars stay accurate.",
@@ -141,7 +132,6 @@ export function buildHeuristicPlan(
 
   const assumptions = [
     "Uses latest snapshot totals as the current baseline.",
-    "Assumes ~9% p.a. blended net yield for capital sizing.",
     `Assumes ~${(effectiveYield * 12 * 100).toFixed(1)}% p.a. blended net yield tailored to your selected category allocation split.`,
     "PFCA contribution counts interest only toward Physical Cash Available.",
     "Progressive IIT still pools FD + UT + Treasury; dividends/PFCA remain outside the IIT pool.",
@@ -153,7 +143,6 @@ export function buildHeuristicPlan(
     summary:
       primaryGap <= 0
         ? "You are already at or above the selected monthly targets on the latest snapshot."
-        : `To reach your targets in ${months} months, add roughly LKR ${Math.round(totalCapitalNeeded).toLocaleString("en-LK")} of productive capital (~LKR ${Math.round(monthlyContributionNeeded).toLocaleString("en-LK")}/mo), tilted toward UTs and FDs for spendable cash.`,
         : `To reach your targets in ${months} months, add roughly LKR ${Math.round(totalCapitalNeeded).toLocaleString("en-LK")} of productive capital (~LKR ${Math.round(monthlyContributionNeeded).toLocaleString("en-LK")}/mo), distributed according to your target allocation split (${activeAllocations.slice(0, 3).join(", ")}).`,
     steps,
     assumptions,
