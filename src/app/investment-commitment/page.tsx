@@ -49,6 +49,18 @@ type CategoryTotals = {
   pfcaFds?: number;
 };
 
+type SnapshotAdditions = {
+  invested?: number;
+  fds?: number;
+  uts?: number;
+  treasury?: number;
+  dividends?: number;
+  pfcaFds?: number;
+  gross?: number;
+  netIit?: number;
+  physicalCash?: number;
+};
+
 type SnapshotTotals = {
   invested?: number;
   investedByCategory?: CategoryTotals;
@@ -58,6 +70,7 @@ type SnapshotTotals = {
   physicalCash?: number;
   startDate?: string;
   endDate?: string;
+  additions?: SnapshotAdditions;
 };
 
 type SnapshotRow = {
@@ -73,6 +86,7 @@ type ChartPoint = {
   fullDate: string;
   startDate?: string;
   endDate?: string;
+  additions?: SnapshotAdditions;
   ts: number;
   fds: number;
   uts: number;
@@ -261,6 +275,14 @@ export default function InvestmentCommitmentPage() {
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
   const [editLabel, setEditLabel] = useState("");
+  const [editAddFds, setEditAddFds] = useState("");
+  const [editAddUts, setEditAddUts] = useState("");
+  const [editAddTreasury, setEditAddTreasury] = useState("");
+  const [editAddDividends, setEditAddDividends] = useState("");
+  const [editAddPfcaFds, setEditAddPfcaFds] = useState("");
+  const [editAddGross, setEditAddGross] = useState("");
+  const [editAddNetIit, setEditAddNetIit] = useState("");
+  const [editAddPhysicalCash, setEditAddPhysicalCash] = useState("");
   const [savingDate, setSavingDate] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -322,6 +344,7 @@ export default function InvestmentCommitmentPage() {
         fullDate: d.toLocaleString("en-LK"),
         startDate,
         endDate,
+        additions: (t as any).additions,
         ts,
         fds: cat.fds || 0,
         uts: cat.uts || 0,
@@ -337,11 +360,24 @@ export default function InvestmentCommitmentPage() {
     });
   }, [chronological]);
 
-  /** All snapshots with progress deltas (including first snapshot as initial addition) */
+  /** All snapshots with progress deltas */
   const allSnapshotRows: SnapshotDelta[] = useMemo(() => {
     if (!chartData.length) return [];
     return chartData.map((cur, i) => {
+      const adds = cur.additions;
+
       if (i === 0) {
+        // First snapshot: use custom additions if entered, else 0 (ignoring base 0 / total wealth)
+        const fdsDelta = adds?.fds !== undefined ? adds.fds : 0;
+        const utsDelta = adds?.uts !== undefined ? adds.uts : 0;
+        const treasuryDelta = adds?.treasury !== undefined ? adds.treasury : 0;
+        const dividendsDelta = adds?.dividends !== undefined ? adds.dividends : 0;
+        const pfcaFdsDelta = adds?.pfcaFds !== undefined ? adds.pfcaFds : 0;
+        const investedDelta = adds?.invested !== undefined ? adds.invested : (fdsDelta + utsDelta + treasuryDelta + dividendsDelta + pfcaFdsDelta);
+        const grossDelta = adds?.gross !== undefined ? adds.gross : 0;
+        const netIitDelta = adds?.netIit !== undefined ? adds.netIit : 0;
+        const physicalDelta = adds?.physicalCash !== undefined ? adds.physicalCash : 0;
+
         return {
           snapshotId: cur.id,
           from: "Start",
@@ -349,20 +385,31 @@ export default function InvestmentCommitmentPage() {
           periodLabel: cur.label,
           startDate: cur.startDate,
           endDate: cur.endDate,
-          grossDelta: cur.grossMonthly,
-          netIitDelta: cur.netIitMonthly,
-          physicalDelta: cur.physicalCashMonthly,
-          investedDelta: cur.invested,
+          grossDelta,
+          netIitDelta,
+          physicalDelta,
+          investedDelta,
           totalWealth: cur.invested,
-          fdsDelta: cur.fds,
-          utsDelta: cur.uts,
-          treasuryDelta: cur.treasury,
-          dividendsDelta: cur.dividends,
-          pfcaFdsDelta: cur.pfcaFds,
+          fdsDelta,
+          utsDelta,
+          treasuryDelta,
+          dividendsDelta,
+          pfcaFdsDelta,
           isBaseline: false,
         };
       }
+
       const prev = chartData[i - 1];
+      const fdsDelta = adds?.fds !== undefined ? adds.fds : (cur.fds - prev.fds);
+      const utsDelta = adds?.uts !== undefined ? adds.uts : (cur.uts - prev.uts);
+      const treasuryDelta = adds?.treasury !== undefined ? adds.treasury : (cur.treasury - prev.treasury);
+      const dividendsDelta = adds?.dividends !== undefined ? adds.dividends : (cur.dividends - prev.dividends);
+      const pfcaFdsDelta = adds?.pfcaFds !== undefined ? adds.pfcaFds : (cur.pfcaFds - prev.pfcaFds);
+      const investedDelta = adds?.invested !== undefined ? adds.invested : (cur.invested - prev.invested);
+      const grossDelta = adds?.gross !== undefined ? adds.gross : (cur.grossMonthly - prev.grossMonthly);
+      const netIitDelta = adds?.netIit !== undefined ? adds.netIit : (cur.netIitMonthly - prev.netIitMonthly);
+      const physicalDelta = adds?.physicalCash !== undefined ? adds.physicalCash : (cur.physicalCashMonthly - prev.physicalCashMonthly);
+
       return {
         snapshotId: cur.id,
         from: prev.label,
@@ -370,16 +417,16 @@ export default function InvestmentCommitmentPage() {
         periodLabel: `${prev.label} → ${cur.label}`,
         startDate: cur.startDate || prev.endDate,
         endDate: cur.endDate,
-        grossDelta: cur.grossMonthly - prev.grossMonthly,
-        netIitDelta: cur.netIitMonthly - prev.netIitMonthly,
-        physicalDelta: cur.physicalCashMonthly - prev.physicalCashMonthly,
-        investedDelta: cur.invested - prev.invested,
+        grossDelta,
+        netIitDelta,
+        physicalDelta,
+        investedDelta,
         totalWealth: cur.invested,
-        fdsDelta: cur.fds - prev.fds,
-        utsDelta: cur.uts - prev.uts,
-        treasuryDelta: cur.treasury - prev.treasury,
-        dividendsDelta: cur.dividends - prev.dividends,
-        pfcaFdsDelta: cur.pfcaFds - prev.pfcaFds,
+        fdsDelta,
+        utsDelta,
+        treasuryDelta,
+        dividendsDelta,
+        pfcaFdsDelta,
         isBaseline: false,
       };
     });
@@ -392,61 +439,22 @@ export default function InvestmentCommitmentPage() {
 
   /** Monthly aggregated additions and progress across categories */
   const monthlyDataMap = useMemo(() => {
-    if (chartData.length === 0) return new Map<string, MonthlyAggregatedData>();
+    if (allSnapshotRows.length === 0) return new Map<string, MonthlyAggregatedData>();
 
     const grouped = new Map<string, MonthlyAggregatedData>();
 
-    chartData.forEach((cur, i) => {
-      const { yearMonth, monthLabel, ts } = getMonthInfoFromEndDate(cur.endDate, cur.ts);
+    allSnapshotRows.forEach((row) => {
+      const { yearMonth, monthLabel, ts } = getMonthInfoFromEndDate(row.endDate);
 
-      if (i === 0) {
-        if (!grouped.has(yearMonth)) {
-          grouped.set(yearMonth, {
-            monthKey: yearMonth,
-            monthLabel,
-            ts,
-            startDate: cur.startDate || cur.endDate || "",
-            endDate: cur.endDate || "",
-            startWealth: 0,
-            endWealth: cur.invested,
-            totalDelta: cur.invested,
-            fdsDelta: cur.fds,
-            utsDelta: cur.uts,
-            treasuryDelta: cur.treasury,
-            dividendsDelta: cur.dividends,
-            pfcaFdsDelta: cur.pfcaFds,
-            grossDelta: cur.grossMonthly,
-            netIitDelta: cur.netIitMonthly,
-            physicalCashDelta: cur.physicalCashMonthly,
-            snapshotsInMonth: 1,
-          });
-        } else {
-          const g = grouped.get(yearMonth)!;
-          g.totalDelta += cur.invested;
-          g.fdsDelta += cur.fds;
-          g.utsDelta += cur.uts;
-          g.treasuryDelta += cur.treasury;
-          g.dividendsDelta += cur.dividends;
-          g.pfcaFdsDelta += cur.pfcaFds;
-          g.grossDelta += cur.grossMonthly;
-          g.netIitDelta += cur.netIitMonthly;
-          g.physicalCashDelta += cur.physicalCashMonthly;
-          g.snapshotsInMonth += 1;
-          g.endWealth = cur.invested;
-        }
-        return;
-      }
-
-      const prev = chartData[i - 1];
       if (!grouped.has(yearMonth)) {
         grouped.set(yearMonth, {
           monthKey: yearMonth,
           monthLabel,
           ts,
-          startDate: cur.startDate || prev.endDate || "",
-          endDate: cur.endDate || "",
-          startWealth: prev.invested,
-          endWealth: cur.invested,
+          startDate: row.startDate || row.endDate || "",
+          endDate: row.endDate || "",
+          startWealth: row.totalWealth - row.investedDelta,
+          endWealth: row.totalWealth,
           totalDelta: 0,
           fdsDelta: 0,
           utsDelta: 0,
@@ -461,25 +469,25 @@ export default function InvestmentCommitmentPage() {
       }
 
       const g = grouped.get(yearMonth)!;
-      g.totalDelta += (cur.invested - prev.invested);
-      g.fdsDelta += (cur.fds - prev.fds);
-      g.utsDelta += (cur.uts - prev.uts);
-      g.treasuryDelta += (cur.treasury - prev.treasury);
-      g.dividendsDelta += (cur.dividends - prev.dividends);
-      g.pfcaFdsDelta += (cur.pfcaFds - prev.pfcaFds);
-      g.grossDelta += (cur.grossMonthly - prev.grossMonthly);
-      g.netIitDelta += (cur.netIitMonthly - prev.netIitMonthly);
-      g.physicalCashDelta += (cur.physicalCashMonthly - prev.physicalCashMonthly);
+      g.totalDelta += row.investedDelta;
+      g.fdsDelta += row.fdsDelta;
+      g.utsDelta += row.utsDelta;
+      g.treasuryDelta += row.treasuryDelta;
+      g.dividendsDelta += row.dividendsDelta;
+      g.pfcaFdsDelta += row.pfcaFdsDelta;
+      g.grossDelta += row.grossDelta;
+      g.netIitDelta += row.netIitDelta;
+      g.physicalCashDelta += row.physicalDelta;
       g.snapshotsInMonth += 1;
-      g.endWealth = cur.invested;
-      if (cur.endDate) g.endDate = cur.endDate;
-      if (cur.startDate && (!g.startDate || cur.startDate < g.startDate)) {
-        g.startDate = cur.startDate;
+      g.endWealth = row.totalWealth;
+      if (row.endDate) g.endDate = row.endDate;
+      if (row.startDate && (!g.startDate || row.startDate < g.startDate)) {
+        g.startDate = row.startDate;
       }
     });
 
     return grouped;
-  }, [chartData]);
+  }, [allSnapshotRows]);
 
   const monthlyInvestments = useMemo(() => {
     return Array.from(monthlyDataMap.values()).sort((a, b) => a.ts - b.ts);
@@ -586,10 +594,20 @@ export default function InvestmentCommitmentPage() {
     const defaultStart = `${y}-${m}-01`;
     const defaultEnd = d.toISOString().slice(0, 10);
 
+    const adds = (snap.totals as any)?.additions || {};
+
     setEditingSnapshot(snap);
     setEditLabel(snap.label || "");
     setEditStartDate((snap.totals as any)?.startDate || defaultStart);
     setEditEndDate((snap.totals as any)?.endDate || defaultEnd);
+    setEditAddFds(adds.fds !== undefined ? String(adds.fds) : "");
+    setEditAddUts(adds.uts !== undefined ? String(adds.uts) : "");
+    setEditAddTreasury(adds.treasury !== undefined ? String(adds.treasury) : "");
+    setEditAddDividends(adds.dividends !== undefined ? String(adds.dividends) : "");
+    setEditAddPfcaFds(adds.pfcaFds !== undefined ? String(adds.pfcaFds) : "");
+    setEditAddGross(adds.gross !== undefined ? String(adds.gross) : "");
+    setEditAddNetIit(adds.netIit !== undefined ? String(adds.netIit) : "");
+    setEditAddPhysicalCash(adds.physicalCash !== undefined ? String(adds.physicalCash) : "");
     setSaveSuccess(false);
   };
 
@@ -598,6 +616,51 @@ export default function InvestmentCommitmentPage() {
     if (!editingSnapshot) return;
     setSavingDate(true);
     try {
+      const additionsObj: SnapshotAdditions = {};
+      let hasCustomAdditions = false;
+
+      if (editAddFds.trim() !== "") {
+        additionsObj.fds = parseFloat(editAddFds) || 0;
+        hasCustomAdditions = true;
+      }
+      if (editAddUts.trim() !== "") {
+        additionsObj.uts = parseFloat(editAddUts) || 0;
+        hasCustomAdditions = true;
+      }
+      if (editAddTreasury.trim() !== "") {
+        additionsObj.treasury = parseFloat(editAddTreasury) || 0;
+        hasCustomAdditions = true;
+      }
+      if (editAddDividends.trim() !== "") {
+        additionsObj.dividends = parseFloat(editAddDividends) || 0;
+        hasCustomAdditions = true;
+      }
+      if (editAddPfcaFds.trim() !== "") {
+        additionsObj.pfcaFds = parseFloat(editAddPfcaFds) || 0;
+        hasCustomAdditions = true;
+      }
+      if (editAddGross.trim() !== "") {
+        additionsObj.gross = parseFloat(editAddGross) || 0;
+        hasCustomAdditions = true;
+      }
+      if (editAddNetIit.trim() !== "") {
+        additionsObj.netIit = parseFloat(editAddNetIit) || 0;
+        hasCustomAdditions = true;
+      }
+      if (editAddPhysicalCash.trim() !== "") {
+        additionsObj.physicalCash = parseFloat(editAddPhysicalCash) || 0;
+        hasCustomAdditions = true;
+      }
+
+      if (hasCustomAdditions) {
+        additionsObj.invested =
+          (additionsObj.fds || 0) +
+          (additionsObj.uts || 0) +
+          (additionsObj.treasury || 0) +
+          (additionsObj.dividends || 0) +
+          (additionsObj.pfcaFds || 0);
+      }
+
       const res = await fetch(`/api/snapshots/${editingSnapshot.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -607,11 +670,12 @@ export default function InvestmentCommitmentPage() {
             ...editingSnapshot.totals,
             startDate: editStartDate,
             endDate: editEndDate,
+            additions: hasCustomAdditions ? additionsObj : null,
           },
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to update snapshot dates");
+      if (!res.ok) throw new Error("Failed to update snapshot");
       setSaveSuccess(true);
       await fetchSnapshotsAndCommitments();
       setTimeout(() => {
@@ -1334,8 +1398,77 @@ export default function InvestmentCommitmentPage() {
                 </div>
               </div>
 
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f3f4f6", display: "flex", alignItems: "center", gap: 6 }}>
+                    <TrendingUp size={14} color="#38bdf8" />
+                    <span>Period Investment Additions (LKR)</span>
+                  </label>
+                  <span style={{ fontSize: "0.72rem", color: "#9ca3af" }}>
+                    Specify new capital deployed in this period
+                  </span>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div className="form-group">
+                    <label style={{ color: "#00f2fe", fontSize: "0.76rem" }}>Fixed Deposits (FDs) Added</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 0"
+                      value={editAddFds}
+                      onChange={(e) => setEditAddFds(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ color: "#10b981", fontSize: "0.76rem" }}>Unit Trusts (UTs) Added</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 0"
+                      value={editAddUts}
+                      onChange={(e) => setEditAddUts(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ color: "#818cf8", fontSize: "0.76rem" }}>Treasury Bills Added</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 0"
+                      value={editAddTreasury}
+                      onChange={(e) => setEditAddTreasury(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ color: "#6366f1", fontSize: "0.76rem" }}>Dividends Added</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 100000"
+                      value={editAddDividends}
+                      onChange={(e) => setEditAddDividends(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ gridColumn: "1 / span 2" }}>
+                    <label style={{ color: "#f43f5e", fontSize: "0.76rem" }}>PFCA FDs Added</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 500000"
+                      value={editAddPfcaFds}
+                      onChange={(e) => setEditAddPfcaFds(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="modal-hint">
-                <span>The date range will be used to compute period intervals and monthly additions.</span>
+                <span>The date range and period additions will be used for monthly commitments and category progress.</span>
               </div>
 
               <div className="modal-footer">
