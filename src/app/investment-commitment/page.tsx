@@ -315,29 +315,29 @@ export default function InvestmentCommitmentPage() {
     });
   }, [chronological]);
 
-  /** All snapshots with deltas and baseline included */
+  /** All snapshots with progress deltas (including first snapshot as initial addition) */
   const allSnapshotRows: SnapshotDelta[] = useMemo(() => {
     if (!chartData.length) return [];
     return chartData.map((cur, i) => {
       if (i === 0) {
         return {
           snapshotId: cur.id,
-          from: "—",
+          from: "Start",
           to: cur.label,
-          periodLabel: `${cur.label} (Initial Baseline)`,
+          periodLabel: cur.label,
           startDate: cur.startDate,
           endDate: cur.endDate,
-          grossDelta: 0,
-          netIitDelta: 0,
-          physicalDelta: 0,
-          investedDelta: 0,
+          grossDelta: cur.grossMonthly,
+          netIitDelta: cur.netIitMonthly,
+          physicalDelta: cur.physicalCashMonthly,
+          investedDelta: cur.invested,
           totalWealth: cur.invested,
-          fdsDelta: 0,
-          utsDelta: 0,
-          treasuryDelta: 0,
-          dividendsDelta: 0,
-          pfcaFdsDelta: 0,
-          isBaseline: true,
+          fdsDelta: cur.fds,
+          utsDelta: cur.uts,
+          treasuryDelta: cur.treasury,
+          dividendsDelta: cur.dividends,
+          pfcaFdsDelta: cur.pfcaFds,
+          isBaseline: false,
         };
       }
       const prev = chartData[i - 1];
@@ -363,9 +363,9 @@ export default function InvestmentCommitmentPage() {
     });
   }, [chartData]);
 
-  /** Delta between consecutive snapshots (excluding baseline) */
+  /** All snapshot deltas */
   const snapshotDeltas: SnapshotDelta[] = useMemo(() => {
-    return allSnapshotRows.filter((s) => !s.isBaseline);
+    return allSnapshotRows;
   }, [allSnapshotRows]);
 
   /** Monthly aggregated additions and progress across categories */
@@ -387,19 +387,32 @@ export default function InvestmentCommitmentPage() {
             ts: d.getTime(),
             startDate: cur.startDate || cur.endDate || "",
             endDate: cur.endDate || "",
-            startWealth: cur.invested,
+            startWealth: 0,
             endWealth: cur.invested,
-            totalDelta: 0,
-            fdsDelta: 0,
-            utsDelta: 0,
-            treasuryDelta: 0,
-            dividendsDelta: 0,
-            pfcaFdsDelta: 0,
-            grossDelta: 0,
-            netIitDelta: 0,
-            physicalCashDelta: 0,
+            totalDelta: cur.invested,
+            fdsDelta: cur.fds,
+            utsDelta: cur.uts,
+            treasuryDelta: cur.treasury,
+            dividendsDelta: cur.dividends,
+            pfcaFdsDelta: cur.pfcaFds,
+            grossDelta: cur.grossMonthly,
+            netIitDelta: cur.netIitMonthly,
+            physicalCashDelta: cur.physicalCashMonthly,
             snapshotsInMonth: 1,
           });
+        } else {
+          const g = grouped.get(yearMonth)!;
+          g.totalDelta += cur.invested;
+          g.fdsDelta += cur.fds;
+          g.utsDelta += cur.uts;
+          g.treasuryDelta += cur.treasury;
+          g.dividendsDelta += cur.dividends;
+          g.pfcaFdsDelta += cur.pfcaFds;
+          g.grossDelta += cur.grossMonthly;
+          g.netIitDelta += cur.netIitMonthly;
+          g.physicalCashDelta += cur.physicalCashMonthly;
+          g.snapshotsInMonth += 1;
+          g.endWealth = cur.invested;
         }
         return;
       }
@@ -647,12 +660,12 @@ export default function InvestmentCommitmentPage() {
           <div className="hist-spinner" />
           <p>Loading investment commitment data...</p>
         </div>
-      ) : snapshots.length < 2 ? (
+      ) : snapshots.length === 0 ? (
         <div className="glass-card hist-empty">
           <Landmark size={48} className="hist-empty-icon" />
-          <h3>Need At Least 2 Snapshots</h3>
+          <h3>No Snapshots Recorded</h3>
           <p>
-            You have {snapshots.length} snapshot saved. Take another snapshot from the My Portfolio page to begin tracking capital commitments and monthly additions.
+            You have no portfolio snapshots saved. Take a snapshot from the My Portfolio page to begin tracking capital commitments and monthly additions.
           </p>
           <Link href="/portfolio" className="btn-primary">
             Go to Portfolio &amp; Take Snapshot
@@ -757,15 +770,10 @@ export default function InvestmentCommitmentPage() {
                     </thead>
                     <tbody>
                       {allSnapshotRows.map((d, i) => (
-                        <tr key={d.snapshotId || i} style={d.isBaseline ? { background: "rgba(56, 189, 248, 0.03)" } : undefined}>
+                        <tr key={d.snapshotId || i}>
                           <td className="hdt-left hdt-period">
                             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               <strong>{d.to}</strong>
-                              {d.isBaseline && (
-                                <span style={{ fontSize: "0.68rem", color: "#38bdf8", padding: "1px 6px", borderRadius: "10px", background: "rgba(56, 189, 248, 0.12)", border: "1px solid rgba(56, 189, 248, 0.25)" }}>
-                                  Baseline
-                                </span>
-                              )}
                             </div>
                           </td>
                           <td className="hdt-left" style={{ fontSize: "0.74rem", color: "#94a3b8" }}>
@@ -773,15 +781,15 @@ export default function InvestmentCommitmentPage() {
                               {d.startDate || "—"} → {d.endDate || "—"}
                             </span>
                           </td>
-                          <DeltaTd value={d.isBaseline ? 0 : d.grossDelta} />
-                          <DeltaTd value={d.isBaseline ? 0 : d.netIitDelta} />
-                          <DeltaTd value={d.isBaseline ? 0 : d.physicalDelta} />
-                          <DeltaTd value={d.isBaseline ? 0 : d.investedDelta} divider />
-                          <DeltaTd value={d.isBaseline ? 0 : d.fdsDelta} accent="#00f2fe" />
-                          <DeltaTd value={d.isBaseline ? 0 : d.utsDelta} accent="#10b981" />
-                          <DeltaTd value={d.isBaseline ? 0 : d.treasuryDelta} accent="#818cf8" />
-                          <DeltaTd value={d.isBaseline ? 0 : d.dividendsDelta} accent="#6366f1" />
-                          <DeltaTd value={d.isBaseline ? 0 : d.pfcaFdsDelta} accent="#f43f5e" />
+                          <DeltaTd value={d.grossDelta} />
+                          <DeltaTd value={d.netIitDelta} />
+                          <DeltaTd value={d.physicalDelta} />
+                          <DeltaTd value={d.investedDelta} divider />
+                          <DeltaTd value={d.fdsDelta} accent="#00f2fe" />
+                          <DeltaTd value={d.utsDelta} accent="#10b981" />
+                          <DeltaTd value={d.treasuryDelta} accent="#818cf8" />
+                          <DeltaTd value={d.dividendsDelta} accent="#6366f1" />
+                          <DeltaTd value={d.pfcaFdsDelta} accent="#f43f5e" />
                           <td className="hdt-wealth-cell">{formatCompact(d.totalWealth)}</td>
                           <td style={{ textAlign: "center" }}>
                             <button
