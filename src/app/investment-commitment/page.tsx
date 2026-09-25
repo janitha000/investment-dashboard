@@ -148,6 +148,24 @@ function formatCompact(num: number) {
   return String(Math.round(num));
 }
 
+function getMonthInfoFromEndDate(endDate?: string, fallbackTs?: number) {
+  if (endDate && /^\d{4}-\d{2}/.test(endDate)) {
+    const parts = endDate.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10); // 1-12
+    const day = parts[2] ? parseInt(parts[2], 10) : 1;
+    const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
+    const dateObj = new Date(year, month - 1, day || 1);
+    const monthLabel = dateObj.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+    const ts = new Date(year, month - 1, 1).getTime();
+    return { yearMonth, monthLabel, ts };
+  }
+  const d = new Date(fallbackTs || Date.now());
+  const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const monthLabel = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+  return { yearMonth, monthLabel, ts: new Date(d.getFullYear(), d.getMonth(), 1).getTime() };
+}
+
 const tooltipStyle = {
   background: "rgba(13, 18, 31, 0.97)",
   border: "1px solid rgba(255,255,255,0.12)",
@@ -276,9 +294,11 @@ export default function InvestmentCommitmentPage() {
   }, []);
 
   const chronological = useMemo(() => {
-    return [...snapshots].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+    return [...snapshots].sort((a, b) => {
+      const aEnd = (a.totals as any)?.endDate || a.timestamp;
+      const bEnd = (b.totals as any)?.endDate || b.timestamp;
+      return new Date(aEnd).getTime() - new Date(bEnd).getTime();
+    });
   }, [snapshots]);
 
   const chartData: ChartPoint[] = useMemo(() => {
@@ -286,20 +306,22 @@ export default function InvestmentCommitmentPage() {
     return chronological.map((snap) => {
       const t = snap.totals || {};
       const cat = t.investedByCategory || {};
-      const ts = new Date(snap.timestamp).getTime();
       const d = new Date(snap.timestamp);
 
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const defaultStart = `${y}-${m}-01`;
       const defaultEnd = d.toISOString().slice(0, 10);
+      const endDate = (t as any).endDate || defaultEnd;
+      const startDate = (t as any).startDate || defaultStart;
+      const ts = new Date(endDate).getTime() || d.getTime();
 
       return {
         id: snap.id,
         label: snap.label || d.toLocaleDateString("en-LK", { month: "short", day: "numeric", year: "2-digit" }),
         fullDate: d.toLocaleString("en-LK"),
-        startDate: (t as any).startDate || defaultStart,
-        endDate: (t as any).endDate || defaultEnd,
+        startDate,
+        endDate,
         ts,
         fds: cat.fds || 0,
         uts: cat.uts || 0,
@@ -375,16 +397,14 @@ export default function InvestmentCommitmentPage() {
     const grouped = new Map<string, MonthlyAggregatedData>();
 
     chartData.forEach((cur, i) => {
-      const d = new Date(cur.ts);
-      const yearMonth = cur.endDate ? cur.endDate.slice(0, 7) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const monthLabel = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+      const { yearMonth, monthLabel, ts } = getMonthInfoFromEndDate(cur.endDate, cur.ts);
 
       if (i === 0) {
         if (!grouped.has(yearMonth)) {
           grouped.set(yearMonth, {
             monthKey: yearMonth,
             monthLabel,
-            ts: d.getTime(),
+            ts,
             startDate: cur.startDate || cur.endDate || "",
             endDate: cur.endDate || "",
             startWealth: 0,
@@ -422,7 +442,7 @@ export default function InvestmentCommitmentPage() {
         grouped.set(yearMonth, {
           monthKey: yearMonth,
           monthLabel,
-          ts: d.getTime(),
+          ts,
           startDate: cur.startDate || prev.endDate || "",
           endDate: cur.endDate || "",
           startWealth: prev.invested,
