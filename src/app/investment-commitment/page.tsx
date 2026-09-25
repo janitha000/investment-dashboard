@@ -926,28 +926,20 @@ export default function InvestmentCommitmentPage() {
         passedPlannedTotal += plannedAddition;
       }
 
-      // Expected wealth if pure plan was followed
-      const expectedYield = (startingWealth + plannedAddition / 2) * monthlyRate;
-      const expectedEndWealth = startingWealth + plannedAddition + expectedYield;
+      // Pure capital additions without compounding effect
+      const expectedEndWealth = startingWealth + plannedAddition;
+      theoreticalWealth = theoreticalWealth + plannedAddition;
 
-      // Pure theoretical planned trajectory from 08/2026
-      const theoYield = (theoreticalWealth + plannedAddition / 2) * monthlyRate;
-      theoreticalWealth = theoreticalWealth + plannedAddition + theoYield;
-
-      let monthlyYield = 0;
       if (hasActualData && actualAddition !== null && actualEndWealth !== null) {
         // Anchor future growth on actual real wealth at end of month!
         currentWealth = actualEndWealth;
-        monthlyYield = Math.max(0, actualEndWealth - startingWealth - actualAddition);
         cumAdditions += actualAddition;
       } else {
-        // Future / projected month
-        monthlyYield = expectedYield;
+        // Future / projected month: pure addition of planned capital
         currentWealth = expectedEndWealth;
         cumAdditions += plannedAddition;
       }
 
-      cumYield += monthlyYield;
       const totalGain = currentWealth - startCap;
 
       timeline.push({
@@ -963,8 +955,8 @@ export default function InvestmentCommitmentPage() {
         variance,
         pctAchieved,
         isAchieved,
-        monthlyYield,
-        cumulativeYield: cumYield,
+        monthlyYield: 0,
+        cumulativeYield: 0,
         cumulativeAdditions: cumAdditions,
         actualEndWealth,
         expectedEndWealth,
@@ -1759,11 +1751,11 @@ export default function InvestmentCommitmentPage() {
                 </div>
 
                 <div className="glass-card kpi-card">
-                  <span className="kpi-label">Estimated Compound Yield</span>
+                  <span className="kpi-label">Total Projected Growth</span>
                   <div className="kpi-value text-indigo">
-                    +{formatLKR(planTimelineData.totalYieldEarned)}
+                    +{planTimelineData.totalGrowthPct.toFixed(1)}%
                   </div>
-                  <span className="kpi-sub">At {planTimelineData.annualRate}% annual return</span>
+                  <span className="kpi-sub">Gain of +{formatCompact(planTimelineData.targetEndWealth - planTimelineData.startCap)}</span>
                 </div>
               </div>
 
@@ -1773,7 +1765,7 @@ export default function InvestmentCommitmentPage() {
                   <div>
                     <h3>1. Portfolio Wealth Growth Trajectory</h3>
                     <p>
-                      Combines real actual portfolio wealth recorded in passed months (08/2026, 09/2026) with dynamically compounded future projections.
+                      Shows actual portfolio wealth recorded in passed months (08/2026, 09/2026) alongside future projected growth based on your planned additions.
                     </p>
                   </div>
                   <Sparkles size={18} className="hist-chart-icon" color="#00f2fe" />
@@ -1851,13 +1843,9 @@ export default function InvestmentCommitmentPage() {
                                   <span>{formatLKR(d.actualAddition)} ({d.pctAchieved.toFixed(0)}%)</span>
                                 </div>
                               )}
-                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#10b981", marginTop: 2 }}>
-                                <span>Est. Monthly Yield:</span>
-                                <span>+{formatLKR(d.monthlyYield)}</span>
-                              </div>
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#818cf8", marginTop: 2, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 4 }}>
-                                <span>Total Gain from 08/2026:</span>
-                                <span>+{formatLKR(d.totalGain)}</span>
+                                <span>Total Capital Added:</span>
+                                <span>+{formatLKR(d.cumulativeAdditions)}</span>
                               </div>
                             </div>
                           );
@@ -2013,14 +2001,14 @@ export default function InvestmentCommitmentPage() {
                     <thead>
                       <tr>
                         <th className="hdt-left">Month</th>
-                        <th style={{ textAlign: "left", width: "190px", color: "#38bdf8" }}>
+                        <th style={{ textAlign: "right", color: "#38bdf8" }}>
                           Planned Target (LKR)
                         </th>
                         <th style={{ textAlign: "right", color: "#00f2fe" }}>Actual Deployed</th>
                         <th style={{ textAlign: "center" }}>Achievement / Status</th>
-                        <th style={{ textAlign: "right", color: "#10b981" }}>Est. Monthly Yield</th>
+                        <th style={{ textAlign: "right", color: "#818cf8" }}>Cumulative Added</th>
                         <th className="hdt-col-wealth" style={{ textAlign: "right" }}>Portfolio Wealth</th>
-                        <th style={{ textAlign: "right", color: "#34d399" }}>Total Gain</th>
+                        <th style={{ textAlign: "right", color: "#34d399" }}>Total Growth</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2124,8 +2112,8 @@ export default function InvestmentCommitmentPage() {
                                 </span>
                               )}
                             </td>
-                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#10b981" }}>
-                              +{formatLKR(item.monthlyYield)}
+                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#818cf8" }}>
+                              +{formatCompact(item.cumulativeAdditions)}
                             </td>
                             <td className="hdt-wealth-cell" style={{ textAlign: "right", color: "#fff", fontWeight: 700 }}>
                               <div>{formatLKR(item.projectedTotalWealth)}</div>
