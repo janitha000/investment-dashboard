@@ -103,6 +103,27 @@ type SnapshotDelta = {
   treasuryDelta: number;
   dividendsDelta: number;
   pfcaFdsDelta: number;
+  isBaseline?: boolean;
+};
+
+type MonthlyAggregatedData = {
+  monthKey: string;
+  monthLabel: string;
+  ts: number;
+  startDate: string;
+  endDate: string;
+  startWealth: number;
+  endWealth: number;
+  totalDelta: number;
+  fdsDelta: number;
+  utsDelta: number;
+  treasuryDelta: number;
+  dividendsDelta: number;
+  pfcaFdsDelta: number;
+  grossDelta: number;
+  netIitDelta: number;
+  physicalCashDelta: number;
+  snapshotsInMonth: number;
 };
 
 type MonthlyCommitment = {
@@ -294,11 +315,32 @@ export default function InvestmentCommitmentPage() {
     });
   }, [chronological]);
 
-  /** Delta between consecutive snapshots */
-  const snapshotDeltas: SnapshotDelta[] = useMemo(() => {
-    if (chartData.length < 2) return [];
-    return chartData.slice(1).map((cur, i) => {
-      const prev = chartData[i];
+  /** All snapshots with deltas and baseline included */
+  const allSnapshotRows: SnapshotDelta[] = useMemo(() => {
+    if (!chartData.length) return [];
+    return chartData.map((cur, i) => {
+      if (i === 0) {
+        return {
+          snapshotId: cur.id,
+          from: "—",
+          to: cur.label,
+          periodLabel: `${cur.label} (Initial Baseline)`,
+          startDate: cur.startDate,
+          endDate: cur.endDate,
+          grossDelta: 0,
+          netIitDelta: 0,
+          physicalDelta: 0,
+          investedDelta: 0,
+          totalWealth: cur.invested,
+          fdsDelta: 0,
+          utsDelta: 0,
+          treasuryDelta: 0,
+          dividendsDelta: 0,
+          pfcaFdsDelta: 0,
+          isBaseline: true,
+        };
+      }
+      const prev = chartData[i - 1];
       return {
         snapshotId: cur.id,
         from: prev.label,
@@ -316,46 +358,71 @@ export default function InvestmentCommitmentPage() {
         treasuryDelta: cur.treasury - prev.treasury,
         dividendsDelta: cur.dividends - prev.dividends,
         pfcaFdsDelta: cur.pfcaFds - prev.pfcaFds,
+        isBaseline: false,
       };
     });
   }, [chartData]);
 
-interface MonthlyAggregatedData {
-  monthKey: string;
-  monthLabel: string;
-  ts: number;
-  totalDelta: number;
-  fdsDelta: number;
-  utsDelta: number;
-  treasuryDelta: number;
-  dividendsDelta: number;
-  pfcaFdsDelta: number;
-  snapshotsInMonth: number;
-}
+  /** Delta between consecutive snapshots (excluding baseline) */
+  const snapshotDeltas: SnapshotDelta[] = useMemo(() => {
+    return allSnapshotRows.filter((s) => !s.isBaseline);
+  }, [allSnapshotRows]);
 
-  /** Monthly aggregated additions across categories */
+  /** Monthly aggregated additions and progress across categories */
   const monthlyDataMap = useMemo(() => {
-    if (chartData.length < 2) return new Map<string, MonthlyAggregatedData>();
+    if (chartData.length === 0) return new Map<string, MonthlyAggregatedData>();
 
     const grouped = new Map<string, MonthlyAggregatedData>();
 
-    chartData.slice(1).forEach((cur, i) => {
-      const prev = chartData[i];
+    chartData.forEach((cur, i) => {
       const d = new Date(cur.ts);
-      const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const yearMonth = cur.endDate ? cur.endDate.slice(0, 7) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const monthLabel = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
 
+      if (i === 0) {
+        if (!grouped.has(yearMonth)) {
+          grouped.set(yearMonth, {
+            monthKey: yearMonth,
+            monthLabel,
+            ts: d.getTime(),
+            startDate: cur.startDate || cur.endDate || "",
+            endDate: cur.endDate || "",
+            startWealth: cur.invested,
+            endWealth: cur.invested,
+            totalDelta: 0,
+            fdsDelta: 0,
+            utsDelta: 0,
+            treasuryDelta: 0,
+            dividendsDelta: 0,
+            pfcaFdsDelta: 0,
+            grossDelta: 0,
+            netIitDelta: 0,
+            physicalCashDelta: 0,
+            snapshotsInMonth: 1,
+          });
+        }
+        return;
+      }
+
+      const prev = chartData[i - 1];
       if (!grouped.has(yearMonth)) {
         grouped.set(yearMonth, {
           monthKey: yearMonth,
           monthLabel,
           ts: d.getTime(),
+          startDate: cur.startDate || prev.endDate || "",
+          endDate: cur.endDate || "",
+          startWealth: prev.invested,
+          endWealth: cur.invested,
           totalDelta: 0,
           fdsDelta: 0,
           utsDelta: 0,
           treasuryDelta: 0,
           dividendsDelta: 0,
           pfcaFdsDelta: 0,
+          grossDelta: 0,
+          netIitDelta: 0,
+          physicalCashDelta: 0,
           snapshotsInMonth: 0,
         });
       }
@@ -367,7 +434,15 @@ interface MonthlyAggregatedData {
       g.treasuryDelta += (cur.treasury - prev.treasury);
       g.dividendsDelta += (cur.dividends - prev.dividends);
       g.pfcaFdsDelta += (cur.pfcaFds - prev.pfcaFds);
+      g.grossDelta += (cur.grossMonthly - prev.grossMonthly);
+      g.netIitDelta += (cur.netIitMonthly - prev.netIitMonthly);
+      g.physicalCashDelta += (cur.physicalCashMonthly - prev.physicalCashMonthly);
       g.snapshotsInMonth += 1;
+      g.endWealth = cur.invested;
+      if (cur.endDate) g.endDate = cur.endDate;
+      if (cur.startDate && (!g.startDate || cur.startDate < g.startDate)) {
+        g.startDate = cur.startDate;
+      }
     });
 
     return grouped;
@@ -621,13 +696,18 @@ interface MonthlyAggregatedData {
           {/* ════════════════════ TAB 1: SNAPSHOT PROGRESS ════════════════════ */}
           {activeTab === "snapshots" && (
             <>
-              {/* Snapshot-to-snapshot progress table */}
+              {/* Snapshot-to-snapshot progress table (All Snapshots) */}
               <div className="glass-card hist-chart-card">
                 <div className="hist-chart-hdr">
                   <div>
-                    <h3>Snapshot-to-snapshot progress</h3>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <h3>Snapshot-to-snapshot progress</h3>
+                      <span className="hist-badge-pill" style={{ color: "#38bdf8", borderColor: "rgba(56, 189, 248, 0.3)" }}>
+                        {allSnapshotRows.length} Snapshots
+                      </span>
+                    </div>
                     <p>
-                      Income and capital changes between consecutive snapshots with editable period dates —
+                      Income and capital changes between consecutive snapshots with editable statement period dates —
                       <span style={{ color: "#10b981", marginLeft: 6 }}>▲ growth</span>
                       <span style={{ color: "#f87171", marginLeft: 8 }}>▼ decline</span>
                       <span style={{ color: "#6b7280", marginLeft: 8 }}>— no change</span>
@@ -636,7 +716,7 @@ interface MonthlyAggregatedData {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span className="hist-badge-pill">
                       <Clock size={12} style={{ marginRight: 4, color: "#00f2fe" }} />
-                      Click Edit to change period dates
+                      Click Edit on any snapshot to adjust dates
                     </span>
                   </div>
                 </div>
@@ -676,25 +756,32 @@ interface MonthlyAggregatedData {
                       </tr>
                     </thead>
                     <tbody>
-                      {snapshotDeltas.map((d, i) => (
-                        <tr key={i}>
+                      {allSnapshotRows.map((d, i) => (
+                        <tr key={d.snapshotId || i} style={d.isBaseline ? { background: "rgba(56, 189, 248, 0.03)" } : undefined}>
                           <td className="hdt-left hdt-period">
-                            <strong>{d.to}</strong>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <strong>{d.to}</strong>
+                              {d.isBaseline && (
+                                <span style={{ fontSize: "0.68rem", color: "#38bdf8", padding: "1px 6px", borderRadius: "10px", background: "rgba(56, 189, 248, 0.12)", border: "1px solid rgba(56, 189, 248, 0.25)" }}>
+                                  Baseline
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="hdt-left" style={{ fontSize: "0.74rem", color: "#94a3b8" }}>
                             <span style={{ fontFamily: "monospace" }}>
                               {d.startDate || "—"} → {d.endDate || "—"}
                             </span>
                           </td>
-                          <DeltaTd value={d.grossDelta} />
-                          <DeltaTd value={d.netIitDelta} />
-                          <DeltaTd value={d.physicalDelta} />
-                          <DeltaTd value={d.investedDelta} divider />
-                          <DeltaTd value={d.fdsDelta} accent="#00f2fe" />
-                          <DeltaTd value={d.utsDelta} accent="#10b981" />
-                          <DeltaTd value={d.treasuryDelta} accent="#818cf8" />
-                          <DeltaTd value={d.dividendsDelta} accent="#6366f1" />
-                          <DeltaTd value={d.pfcaFdsDelta} accent="#f43f5e" />
+                          <DeltaTd value={d.isBaseline ? 0 : d.grossDelta} />
+                          <DeltaTd value={d.isBaseline ? 0 : d.netIitDelta} />
+                          <DeltaTd value={d.isBaseline ? 0 : d.physicalDelta} />
+                          <DeltaTd value={d.isBaseline ? 0 : d.investedDelta} divider />
+                          <DeltaTd value={d.isBaseline ? 0 : d.fdsDelta} accent="#00f2fe" />
+                          <DeltaTd value={d.isBaseline ? 0 : d.utsDelta} accent="#10b981" />
+                          <DeltaTd value={d.isBaseline ? 0 : d.treasuryDelta} accent="#818cf8" />
+                          <DeltaTd value={d.isBaseline ? 0 : d.dividendsDelta} accent="#6366f1" />
+                          <DeltaTd value={d.isBaseline ? 0 : d.pfcaFdsDelta} accent="#f43f5e" />
                           <td className="hdt-wealth-cell">{formatCompact(d.totalWealth)}</td>
                           <td style={{ textAlign: "center" }}>
                             <button
@@ -708,6 +795,114 @@ interface MonthlyAggregatedData {
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Aggregated Monthly Investment Progress Table */}
+              <div className="glass-card hist-chart-card">
+                <div className="hist-chart-hdr">
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <h3>Aggregated Monthly Investment Progress</h3>
+                      <span className="hist-badge-pill" style={{ color: "#10b981", borderColor: "rgba(16, 185, 129, 0.3)" }}>
+                        Whole Month View
+                      </span>
+                    </div>
+                    <p>
+                      Consolidated net capital additions, asset category deployment, and month-end portfolio wealth for each full month.
+                    </p>
+                  </div>
+                  <Landmark size={18} className="hist-chart-icon" />
+                </div>
+
+                <div className="hist-delta-scroll">
+                  <table className="hist-delta-tbl">
+                    <colgroup>
+                      <col className="hdt-col-period" style={{ width: "160px" }} />
+                      <col style={{ width: "140px" }} />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num hdt-col-divider" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-wealth" />
+                      <col style={{ width: "120px" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className="hdt-left">Month</th>
+                        <th className="hdt-left" style={{ color: "#9ca3af" }}>Statement Period</th>
+                        <th>Gross /mo Δ</th>
+                        <th>Net IIT /mo Δ</th>
+                        <th>Cash /mo Δ</th>
+                        <th className="hdt-divider">Total Added Δ</th>
+                        <th style={{ color: "#00f2fe" }}>FDs Δ</th>
+                        <th style={{ color: "#10b981" }}>UTs Δ</th>
+                        <th style={{ color: "#818cf8" }}>Treasury Δ</th>
+                        <th style={{ color: "#6366f1" }}>Dividends Δ</th>
+                        <th style={{ color: "#f43f5e" }}>PFCA Δ</th>
+                        <th className="hdt-wealth-th">Month-End Wealth</th>
+                        <th style={{ textAlign: "center" }}>Planned Target</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyInvestments.map((m) => {
+                        const planned = commitments[m.monthKey]?.plannedAmount;
+                        const isMet = planned !== undefined && planned !== null && m.totalDelta >= planned;
+                        return (
+                          <tr key={m.monthKey}>
+                            <td className="hdt-left hdt-period">
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <strong>{m.monthLabel}</strong>
+                                <span style={{ fontSize: "0.7rem", padding: "1px 6px", borderRadius: "10px", background: "rgba(255,255,255,0.06)", color: "#94a3b8" }}>
+                                  {m.snapshotsInMonth} {m.snapshotsInMonth === 1 ? "snap" : "snaps"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="hdt-left" style={{ fontSize: "0.74rem", color: "#94a3b8" }}>
+                              <span style={{ fontFamily: "monospace" }}>
+                                {m.startDate || "—"} → {m.endDate || "—"}
+                              </span>
+                            </td>
+                            <DeltaTd value={m.grossDelta} />
+                            <DeltaTd value={m.netIitDelta} />
+                            <DeltaTd value={m.physicalCashDelta} />
+                            <DeltaTd value={m.totalDelta} divider />
+                            <DeltaTd value={m.fdsDelta} accent="#00f2fe" />
+                            <DeltaTd value={m.utsDelta} accent="#10b981" />
+                            <DeltaTd value={m.treasuryDelta} accent="#818cf8" />
+                            <DeltaTd value={m.dividendsDelta} accent="#6366f1" />
+                            <DeltaTd value={m.pfcaFdsDelta} accent="#f43f5e" />
+                            <td className="hdt-wealth-cell">{formatCompact(m.endWealth)}</td>
+                            <td style={{ textAlign: "center" }}>
+                              {planned !== undefined && planned !== null ? (
+                                <span
+                                  style={{
+                                    fontSize: "0.72rem",
+                                    fontWeight: 600,
+                                    padding: "3px 8px",
+                                    borderRadius: "12px",
+                                    background: isMet ? "rgba(16, 185, 129, 0.15)" : "rgba(248, 113, 113, 0.15)",
+                                    color: isMet ? "#34d399" : "#f87171",
+                                    border: `1px solid ${isMet ? "rgba(16, 185, 129, 0.3)" : "rgba(248, 113, 113, 0.3)"}`,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {formatCompact(planned)} {isMet ? "✓" : `(${planned > 0 ? ((m.totalDelta / planned) * 100).toFixed(0) : "0"}%)`}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: "0.72rem", color: "#6b7280" }}>—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
