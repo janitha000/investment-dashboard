@@ -1683,122 +1683,53 @@ export default function InvestmentCommitmentPage() {
           {/* ════════════════════ TAB 3: INVESTMENT PLAN & WEALTH TIMELINE ════════════════════ */}
           {activeTab === "plan" && (
             <div className="plan-timeline-view">
-              {/* Plan Configuration & Parameter Bar */}
-              <div className="glass-card plan-controls-card">
-                <div className="plan-controls-hdr">
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Sliders size={18} color="#38bdf8" />
-                      <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Investment Plan &amp; Wealth Projection Parameters</h3>
-                    </div>
-                    <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#9ca3af" }}>
-                      Model your portfolio growth starting from 08/2026, comparing passed months against actual realized investments and dynamically projecting future wealth.
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button
-                      type="button"
-                      onClick={handleSavePlan}
-                      disabled={savingPlan}
-                      className="btn-save-plan"
-                    >
-                      {planSaveSuccess ? (
-                        <>
-                          <Check size={15} color="#10b981" />
-                          <span>Plan Saved to DB!</span>
-                        </>
-                      ) : savingPlan ? (
-                        <span>Saving Plan...</span>
-                      ) : (
-                        <>
-                          <Save size={15} />
-                          <span>Save All Planned Amounts</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+              {/* Plan Header Bar */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.15rem", color: "#fff" }}>Monthly Wealth Projection &amp; Investment Plan</h3>
+                  <p style={{ margin: "3px 0 0", fontSize: "0.8rem", color: "#9ca3af" }}>
+                    Starting from 08/2026. Enter planned additions manually for each month in the ledger table below.
+                  </p>
                 </div>
-
-                <div className="plan-param-grid">
-                  <div className="plan-param-group">
-                    <label>Start Month (Baseline)</label>
-                    <div className="input-affix-wrap">
-                      <input
-                        type="month"
-                        value={planStartMonth}
-                        onChange={(e) => setPlanStartMonth(e.target.value || "2026-08")}
-                        className="plan-num-input"
-                        style={{ color: "#38bdf8" }}
-                      />
-                    </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div className="horizon-pills">
+                    {[6, 12, 24, 36, 60].map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        className={`horizon-pill ${planHorizonMonths === h ? "active" : ""}`}
+                        onClick={() => setPlanHorizonMonths(h)}
+                        style={{ padding: "6px 12px", minWidth: 44 }}
+                      >
+                        {h < 12 ? `${h}M` : `${h / 12}Y`}
+                      </button>
+                    ))}
                   </div>
-
-                  <div className="plan-param-group">
-                    <label>Starting Portfolio Capital (LKR)</label>
-                    <div className="input-affix-wrap">
-                      <span className="affix">Rs.</span>
-                      <input
-                        type="number"
-                        step="500000"
-                        value={planStartingCapital}
-                        onChange={(e) => setPlanStartingCapital(e.target.value)}
-                        placeholder={String(planTimelineData.startCap)}
-                        className="plan-num-input"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="plan-param-group">
-                    <label>Expected Annual Return Rate (%)</label>
-                    <div className="input-affix-wrap">
-                      <input
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        max="50"
-                        value={planAnnualReturnRate}
-                        onChange={(e) => setPlanAnnualReturnRate(e.target.value)}
-                        className="plan-num-input"
-                      />
-                      <span className="affix-right">% p.a.</span>
-                    </div>
-                  </div>
-
-                  <div className="plan-param-group">
-                    <label>Default Monthly Addition (LKR)</label>
-                    <div className="input-affix-wrap">
-                      <span className="affix">Rs.</span>
-                      <input
-                        type="number"
-                        step="50000"
-                        value={planDefaultAddition}
-                        onChange={(e) => setPlanDefaultAddition(e.target.value)}
-                        placeholder="1000000"
-                        className="plan-num-input"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="plan-param-group" style={{ gridColumn: "span 2" }}>
-                    <label>Projection Horizon</label>
-                    <div className="horizon-pills">
-                      {[6, 12, 24, 36, 60].map((h) => (
-                        <button
-                          key={h}
-                          type="button"
-                          className={`horizon-pill ${planHorizonMonths === h ? "active" : ""}`}
-                          onClick={() => setPlanHorizonMonths(h)}
-                        >
-                          {h < 12 ? `${h} Months` : `${h / 12} Years`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSavePlan}
+                    disabled={savingPlan}
+                    className="btn-save-plan"
+                  >
+                    {planSaveSuccess ? (
+                      <>
+                        <Check size={15} color="#10b981" />
+                        <span>Plan Saved!</span>
+                      </>
+                    ) : savingPlan ? (
+                      <span>Saving...</span>
+                    ) : (
+                      <>
+                        <Save size={15} />
+                        <span>Save All Planned Amounts</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
               {/* Plan KPI Cards */}
-              <div className="grid-summary" style={{ marginTop: "1rem" }}>
+              <div className="grid-summary">
                 <div className="glass-card kpi-card" style={{ borderColor: "rgba(0, 242, 254, 0.3)" }}>
                   <span className="kpi-label">Projected End Wealth ({planHorizonMonths}M)</span>
                   <div className="kpi-value text-glow" style={{ color: "#00f2fe" }}>
@@ -1849,11 +1780,15 @@ export default function InvestmentCommitmentPage() {
                 </div>
 
                 <div className="hist-chart-wrap">
-                  <ResponsiveContainer width="100%" height={340}>
+                  <ResponsiveContainer width="100%" height={350}>
                     <AreaChart data={planTimelineData.timeline} margin={{ top: 12, right: 16, left: 8, bottom: 0 }}>
                       <defs>
+                        <linearGradient id="actualWealthGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.45} />
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                        </linearGradient>
                         <linearGradient id="wealthGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#00f2fe" stopOpacity={0.4} />
+                          <stop offset="5%" stopColor="#00f2fe" stopOpacity={0.25} />
                           <stop offset="95%" stopColor="#00f2fe" stopOpacity={0.0} />
                         </linearGradient>
                       </defs>
@@ -1896,8 +1831,14 @@ export default function InvestmentCommitmentPage() {
                                   {d.isPassed ? "Realized / Passed" : "Future Projection"}
                                 </span>
                               </div>
-                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.8rem", color: "#00f2fe", fontWeight: 700 }}>
-                                <span>{d.isPassed ? "Actual Portfolio Wealth:" : "Projected Total Wealth:"}</span>
+                              {d.chartActualWealth !== null && (
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.82rem", color: "#10b981", fontWeight: 700 }}>
+                                  <span>Actual Realized Wealth:</span>
+                                  <span>{formatLKR(d.chartActualWealth)}</span>
+                                </div>
+                              )}
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.8rem", color: "#00f2fe", fontWeight: 700, marginTop: d.chartActualWealth !== null ? 2 : 0 }}>
+                                <span>Projected Total Wealth:</span>
                                 <span>{formatLKR(d.projectedTotalWealth)}</span>
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#9ca3af", marginTop: 4 }}>
@@ -1925,12 +1866,25 @@ export default function InvestmentCommitmentPage() {
                       <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
                       <Area
                         type="monotone"
+                        dataKey="chartActualWealth"
+                        name="Actual Realized Wealth (Passed)"
+                        stroke="#10b981"
+                        strokeWidth={3}
+                        fillOpacity={1}
+                        fill="url(#actualWealthGrad)"
+                        dot={{ r: 5, fill: "#10b981", stroke: "#0d121f", strokeWidth: 2 }}
+                        activeDot={{ r: 7, fill: "#34d399" }}
+                      />
+                      <Area
+                        type="monotone"
                         dataKey="projectedTotalWealth"
-                        name="Realized & Projected Wealth"
+                        name="Projected Wealth Trajectory"
                         stroke="#00f2fe"
                         strokeWidth={2.5}
+                        strokeDasharray="4 4"
                         fillOpacity={1}
                         fill="url(#wealthGrad)"
+                        dot={false}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
