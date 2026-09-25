@@ -12,10 +12,14 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  Cell,
+  PieChart,
+  Pie,
 } from "recharts";
 import {
   History as HistoryIcon,
   TrendingUp,
+  TrendingDown,
   Calendar,
   Pencil,
   Clock,
@@ -26,7 +30,15 @@ import {
   ArrowDownRight,
   X,
   Layers,
+  Target,
+  DollarSign,
+  ChevronLeft,
   ChevronRight,
+  Sparkles,
+  PieChart as PieIcon,
+  BarChart3,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 
 type CategoryTotals = {
@@ -93,6 +105,12 @@ type SnapshotDelta = {
   pfcaFdsDelta: number;
 };
 
+type MonthlyCommitment = {
+  month: string; // "YYYY-MM"
+  plannedAmount: number;
+  notes?: string | null;
+};
+
 function formatLKR(num: number) {
   return new Intl.NumberFormat("en-LK", {
     style: "currency",
@@ -152,7 +170,6 @@ function DeltaTd({
   divider?: boolean;
 }) {
   const isPos = value > 0;
-  const isNeg = value < 0;
 
   if (value === 0) {
     return (
@@ -177,12 +194,30 @@ function DeltaTd({
   );
 }
 
+const CATEGORY_COLORS = {
+  fds: "#00f2fe",
+  uts: "#10b981",
+  treasury: "#818cf8",
+  dividends: "#6366f1",
+  pfcaFds: "#f43f5e",
+};
+
 export default function InvestmentCommitmentPage() {
   const [loading, setLoading] = useState(true);
   const [snapshots, setSnapshots] = useState<SnapshotRow[]>([]);
+  const [commitments, setCommitments] = useState<Record<string, MonthlyCommitment>>({});
   const [error, setError] = useState<string | null>(null);
 
-  // Edit modal state
+  // Tab View
+  const [activeTab, setActiveTab] = useState<"snapshots" | "monthly">("snapshots");
+
+  // Monthly View State
+  const [selectedMonthKey, setSelectedMonthKey] = useState<string>("");
+  const [plannedInput, setPlannedInput] = useState<string>("");
+  const [savingCommitment, setSavingCommitment] = useState(false);
+  const [commitmentSavedSuccess, setCommitmentSavedSuccess] = useState(false);
+
+  // Edit Snapshot Dates Modal State
   const [editingSnapshot, setEditingSnapshot] = useState<SnapshotRow | null>(null);
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
@@ -190,13 +225,24 @@ export default function InvestmentCommitmentPage() {
   const [savingDate, setSavingDate] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const fetchSnapshots = async () => {
+  const fetchSnapshotsAndCommitments = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/snapshots");
-      if (!res.ok) throw new Error("Failed to load snapshots");
-      const data = await res.json();
-      if (Array.isArray(data)) setSnapshots(data);
+      const [snapRes, commRes] = await Promise.all([
+        fetch("/api/snapshots"),
+        fetch("/api/commitments"),
+      ]);
+
+      if (!snapRes.ok) throw new Error("Failed to load snapshots");
+      const snapData = await snapRes.json();
+      if (Array.isArray(snapData)) setSnapshots(snapData);
+
+      if (commRes.ok) {
+        const commData = await commRes.json();
+        if (commData && typeof commData === "object") {
+          setCommitments(commData);
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
     } finally {
@@ -205,7 +251,7 @@ export default function InvestmentCommitmentPage() {
   };
 
   useEffect(() => {
-    fetchSnapshots();
+    fetchSnapshotsAndCommitments();
   }, []);
 
   const chronological = useMemo(() => {
@@ -222,7 +268,6 @@ export default function InvestmentCommitmentPage() {
       const ts = new Date(snap.timestamp).getTime();
       const d = new Date(snap.timestamp);
 
-      // Default start date = 1st of month, end date = snapshot date or end of month
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const defaultStart = `${y}-${m}-01`;
@@ -275,30 +320,34 @@ export default function InvestmentCommitmentPage() {
     });
   }, [chartData]);
 
-  /** Monthly Net New Capital Investments */
-  const monthlyInvestments = useMemo(() => {
-    if (chartData.length < 2) return [];
+interface MonthlyAggregatedData {
+  monthKey: string;
+  monthLabel: string;
+  ts: number;
+  totalDelta: number;
+  fdsDelta: number;
+  utsDelta: number;
+  treasuryDelta: number;
+  dividendsDelta: number;
+  pfcaFdsDelta: number;
+  snapshotsInMonth: number;
+}
 
-    const grouped = new Map<string, {
-      monthLabel: string;
-      ts: number;
-      totalDelta: number;
-      fdsDelta: number;
-      utsDelta: number;
-      treasuryDelta: number;
-      dividendsDelta: number;
-      pfcaFdsDelta: number;
-    }>();
+  /** Monthly aggregated additions across categories */
+  const monthlyDataMap = useMemo(() => {
+    if (chartData.length < 2) return new Map<string, MonthlyAggregatedData>();
+
+    const grouped = new Map<string, MonthlyAggregatedData>();
 
     chartData.slice(1).forEach((cur, i) => {
       const prev = chartData[i];
       const d = new Date(cur.ts);
       const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-
       const monthLabel = d.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
 
       if (!grouped.has(yearMonth)) {
         grouped.set(yearMonth, {
+          monthKey: yearMonth,
           monthLabel,
           ts: d.getTime(),
           totalDelta: 0,
@@ -307,6 +356,7 @@ export default function InvestmentCommitmentPage() {
           treasuryDelta: 0,
           dividendsDelta: 0,
           pfcaFdsDelta: 0,
+          snapshotsInMonth: 0,
         });
       }
 
@@ -317,10 +367,106 @@ export default function InvestmentCommitmentPage() {
       g.treasuryDelta += (cur.treasury - prev.treasury);
       g.dividendsDelta += (cur.dividends - prev.dividends);
       g.pfcaFdsDelta += (cur.pfcaFds - prev.pfcaFds);
+      g.snapshotsInMonth += 1;
     });
 
-    return Array.from(grouped.values()).sort((a, b) => a.ts - b.ts);
+    return grouped;
   }, [chartData]);
+
+  const monthlyInvestments = useMemo(() => {
+    return Array.from(monthlyDataMap.values()).sort((a, b) => a.ts - b.ts);
+  }, [monthlyDataMap]);
+
+  // Set default selected month for monthly view
+  useEffect(() => {
+    if (!selectedMonthKey && monthlyInvestments.length > 0) {
+      const latestMonth = monthlyInvestments[monthlyInvestments.length - 1].monthKey;
+      setSelectedMonthKey(latestMonth);
+    }
+  }, [monthlyInvestments, selectedMonthKey]);
+
+  // Sync planned input when month changes
+  useEffect(() => {
+    if (selectedMonthKey) {
+      const existing = commitments[selectedMonthKey]?.plannedAmount;
+      if (existing !== undefined && existing !== null) {
+        setPlannedInput(String(existing));
+      } else {
+        setPlannedInput("1000000"); // default 1,000,000 LKR
+      }
+      setCommitmentSavedSuccess(false);
+    }
+  }, [selectedMonthKey, commitments]);
+
+  // Current selected month calculations
+  const currentMonthData = useMemo(() => {
+    if (!selectedMonthKey) return null;
+    const stats = monthlyDataMap.get(selectedMonthKey) || {
+      monthKey: selectedMonthKey,
+      monthLabel: selectedMonthKey,
+      ts: 0,
+      totalDelta: 0,
+      fdsDelta: 0,
+      utsDelta: 0,
+      treasuryDelta: 0,
+      dividendsDelta: 0,
+      pfcaFdsDelta: 0,
+      snapshotsInMonth: 0,
+    };
+
+    const plannedVal = Number(plannedInput) >= 0 ? Number(plannedInput) : (commitments[selectedMonthKey]?.plannedAmount || 1000000);
+    const actualVal = stats.totalDelta;
+    const variance = actualVal - plannedVal;
+    const pctAchieved = plannedVal > 0 ? (actualVal / plannedVal) * 100 : 0;
+
+    const categoryBreakdown = [
+      { name: "Fixed Deposits", value: Math.max(0, stats.fdsDelta), raw: stats.fdsDelta, color: CATEGORY_COLORS.fds },
+      { name: "Unit Trusts", value: Math.max(0, stats.utsDelta), raw: stats.utsDelta, color: CATEGORY_COLORS.uts },
+      { name: "Treasury Bills", value: Math.max(0, stats.treasuryDelta), raw: stats.treasuryDelta, color: CATEGORY_COLORS.treasury },
+      { name: "Dividends", value: Math.max(0, stats.dividendsDelta), raw: stats.dividendsDelta, color: CATEGORY_COLORS.dividends },
+      { name: "PFCA FDs", value: Math.max(0, stats.pfcaFdsDelta), raw: stats.pfcaFdsDelta, color: CATEGORY_COLORS.pfcaFds },
+    ];
+
+    return {
+      ...stats,
+      plannedVal,
+      actualVal,
+      variance,
+      pctAchieved,
+      categoryBreakdown,
+    };
+  }, [selectedMonthKey, monthlyDataMap, plannedInput, commitments]);
+
+  // Save Planned Commitment for selected month
+  const handleSaveCommitment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedMonthKey) return;
+    setSavingCommitment(true);
+    try {
+      const num = parseFloat(plannedInput) || 0;
+      const res = await fetch("/api/commitments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month: selectedMonthKey,
+          plannedAmount: num,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save planned commitment");
+      const data = await res.json();
+      setCommitments((prev) => ({
+        ...prev,
+        [selectedMonthKey]: data.commitment,
+      }));
+      setCommitmentSavedSuccess(true);
+      setTimeout(() => setCommitmentSavedSuccess(false), 2000);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Failed to save commitment");
+    } finally {
+      setSavingCommitment(false);
+    }
+  };
 
   // Open edit modal for a snapshot
   const handleOpenEdit = (snapId: string) => {
@@ -359,7 +505,7 @@ export default function InvestmentCommitmentPage() {
 
       if (!res.ok) throw new Error("Failed to update snapshot dates");
       setSaveSuccess(true);
-      await fetchSnapshots();
+      await fetchSnapshotsAndCommitments();
       setTimeout(() => {
         setEditingSnapshot(null);
         setSaveSuccess(false);
@@ -390,18 +536,31 @@ export default function InvestmentCommitmentPage() {
           </div>
           <h1>Investment Commitment</h1>
           <p className="hist-sub">
-            Track consecutive snapshot deltas, monthly net new capital deployment across categories, and customize snapshot period dates.
+            Track planned vs actual monthly capital commitments, analyze snapshot deltas, and edit snapshot period dates.
           </p>
         </div>
 
         <div className="hist-header-actions">
+          <div className="hist-tab-switcher">
+            <button
+              className={`hist-tab-btn ${activeTab === "snapshots" ? "active" : ""}`}
+              onClick={() => setActiveTab("snapshots")}
+            >
+              <HistoryIcon size={14} />
+              <span>Snapshot Progress</span>
+            </button>
+            <button
+              className={`hist-tab-btn ${activeTab === "monthly" ? "active" : ""}`}
+              onClick={() => setActiveTab("monthly")}
+            >
+              <Calendar size={14} />
+              <span>Monthly View</span>
+            </button>
+          </div>
+
           <Link href="/history" className="hist-btn-secondary">
             <HistoryIcon size={15} />
             <span>Full History</span>
-          </Link>
-          <Link href="/portfolio" className="hist-btn-secondary">
-            <Layers size={15} />
-            <span>My Portfolio</span>
           </Link>
         </div>
       </div>
@@ -431,7 +590,7 @@ export default function InvestmentCommitmentPage() {
             <div className="glass-card kpi-card">
               <span className="kpi-label">Current Total Capital</span>
               <div className="kpi-value text-glow">{formatLKR(latestWealth)}</div>
-              <span className="kpi-sub">Across all asset classes</span>
+              <span className="kpi-sub">Across all portfolio assets</span>
             </div>
 
             <div className="glass-card kpi-card">
@@ -445,7 +604,7 @@ export default function InvestmentCommitmentPage() {
             </div>
 
             <div className="glass-card kpi-card">
-              <span className="kpi-label">Avg. Monthly Inflow</span>
+              <span className="kpi-label">Avg. Monthly Addition</span>
               <div className={`kpi-value ${avgMonthlyAddition >= 0 ? "text-cyan" : "text-coral"}`}>
                 {avgMonthlyAddition >= 0 ? "+" : ""}{formatLKR(avgMonthlyAddition)}/mo
               </div>
@@ -453,205 +612,435 @@ export default function InvestmentCommitmentPage() {
             </div>
 
             <div className="glass-card kpi-card">
-              <span className="kpi-label">Snapshots Tracked</span>
+              <span className="kpi-label">Active Snapshots</span>
               <div className="kpi-value text-indigo">{snapshots.length}</div>
-              <span className="kpi-sub">With configurable period dates</span>
+              <span className="kpi-sub">With custom start &amp; end dates</span>
             </div>
           </div>
 
-          {/* ── Section 1: Snapshot-to-snapshot progress table ── */}
-          <div className="glass-card hist-chart-card">
-            <div className="hist-chart-hdr">
-              <div>
-                <h3>Snapshot-to-snapshot progress</h3>
-                <p>
-                  Income and capital changes between consecutive snapshots —
-                  <span style={{ color: "#10b981", marginLeft: 6 }}>▲ growth</span>
-                  <span style={{ color: "#f87171", marginLeft: 8 }}>▼ decline</span>
-                  <span style={{ color: "#6b7280", marginLeft: 8 }}>— no change</span>
-                </p>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="hist-badge-pill">
-                  <Calendar size={13} style={{ marginRight: 4 }} />
-                  Editable Dates
-                </span>
-              </div>
-            </div>
-
-            <div className="hist-delta-scroll">
-              <table className="hist-delta-tbl">
-                <colgroup>
-                  <col className="hdt-col-period" />
-                  <col style={{ width: "130px" }} />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-num hdt-col-divider" />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-num" />
-                  <col className="hdt-col-wealth" />
-                  <col style={{ width: "80px" }} />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th className="hdt-left">Snapshot</th>
-                    <th className="hdt-left" style={{ color: "#9ca3af" }}>Period Dates</th>
-                    <th>Gross /mo</th>
-                    <th>Net IIT /mo</th>
-                    <th>Cash /mo</th>
-                    <th className="hdt-divider">Capital Δ</th>
-                    <th style={{ color: "#00f2fe" }}>FDs Δ</th>
-                    <th style={{ color: "#10b981" }}>UTs Δ</th>
-                    <th style={{ color: "#818cf8" }}>Treasury Δ</th>
-                    <th style={{ color: "#6366f1" }}>Dividends Δ</th>
-                    <th style={{ color: "#f43f5e" }}>PFCA Δ</th>
-                    <th className="hdt-wealth-th">Total Wealth</th>
-                    <th style={{ textAlign: "center" }}>Edit Dates</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {snapshotDeltas.map((d, i) => (
-                    <tr key={i}>
-                      <td className="hdt-left hdt-period">
-                        <strong>{d.to}</strong>
-                      </td>
-                      <td className="hdt-left" style={{ fontSize: "0.74rem", color: "#94a3b8" }}>
-                        <span style={{ fontFamily: "monospace" }}>
-                          {d.startDate || "—"} → {d.endDate || "—"}
-                        </span>
-                      </td>
-                      <DeltaTd value={d.grossDelta} />
-                      <DeltaTd value={d.netIitDelta} />
-                      <DeltaTd value={d.physicalDelta} />
-                      <DeltaTd value={d.investedDelta} divider />
-                      <DeltaTd value={d.fdsDelta} accent="#00f2fe" />
-                      <DeltaTd value={d.utsDelta} accent="#10b981" />
-                      <DeltaTd value={d.treasuryDelta} accent="#818cf8" />
-                      <DeltaTd value={d.dividendsDelta} accent="#6366f1" />
-                      <DeltaTd value={d.pfcaFdsDelta} accent="#f43f5e" />
-                      <td className="hdt-wealth-cell">{formatCompact(d.totalWealth)}</td>
-                      <td style={{ textAlign: "center" }}>
-                        <button
-                          className="hist-edit-btn"
-                          onClick={() => handleOpenEdit(d.snapshotId)}
-                          title="Edit snapshot start & end dates"
-                        >
-                          <Pencil size={13} />
-                          <span>Edit</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* ── Section 2: Monthly Investment Additions Chart ── */}
-          {monthlyInvestments.length > 0 && (
-            <div className="glass-card hist-chart-card">
-              <div className="hist-chart-hdr">
-                <div>
-                  <h3>Monthly Investment Additions</h3>
-                  <p>
-                    Net new capital added (or withdrawn) per month, broken down by asset category.
-                  </p>
+          {/* ════════════════════ TAB 1: SNAPSHOT PROGRESS ════════════════════ */}
+          {activeTab === "snapshots" && (
+            <>
+              {/* Snapshot-to-snapshot progress table */}
+              <div className="glass-card hist-chart-card">
+                <div className="hist-chart-hdr">
+                  <div>
+                    <h3>Snapshot-to-snapshot progress</h3>
+                    <p>
+                      Income and capital changes between consecutive snapshots with editable period dates —
+                      <span style={{ color: "#10b981", marginLeft: 6 }}>▲ growth</span>
+                      <span style={{ color: "#f87171", marginLeft: 8 }}>▼ decline</span>
+                      <span style={{ color: "#6b7280", marginLeft: 8 }}>— no change</span>
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="hist-badge-pill">
+                      <Clock size={12} style={{ marginRight: 4, color: "#00f2fe" }} />
+                      Click Edit to change period dates
+                    </span>
+                  </div>
                 </div>
-                <TrendingUp size={18} className="hist-chart-icon" />
+
+                <div className="hist-delta-scroll">
+                  <table className="hist-delta-tbl">
+                    <colgroup>
+                      <col className="hdt-col-period" />
+                      <col style={{ width: "140px" }} />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num hdt-col-divider" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-num" />
+                      <col className="hdt-col-wealth" />
+                      <col style={{ width: "85px" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th className="hdt-left">Snapshot</th>
+                        <th className="hdt-left" style={{ color: "#9ca3af" }}>Period Dates</th>
+                        <th>Gross /mo</th>
+                        <th>Net IIT /mo</th>
+                        <th>Cash /mo</th>
+                        <th className="hdt-divider">Capital Δ</th>
+                        <th style={{ color: "#00f2fe" }}>FDs Δ</th>
+                        <th style={{ color: "#10b981" }}>UTs Δ</th>
+                        <th style={{ color: "#818cf8" }}>Treasury Δ</th>
+                        <th style={{ color: "#6366f1" }}>Dividends Δ</th>
+                        <th style={{ color: "#f43f5e" }}>PFCA Δ</th>
+                        <th className="hdt-wealth-th">Total Wealth</th>
+                        <th style={{ textAlign: "center" }}>Edit Dates</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {snapshotDeltas.map((d, i) => (
+                        <tr key={i}>
+                          <td className="hdt-left hdt-period">
+                            <strong>{d.to}</strong>
+                          </td>
+                          <td className="hdt-left" style={{ fontSize: "0.74rem", color: "#94a3b8" }}>
+                            <span style={{ fontFamily: "monospace" }}>
+                              {d.startDate || "—"} → {d.endDate || "—"}
+                            </span>
+                          </td>
+                          <DeltaTd value={d.grossDelta} />
+                          <DeltaTd value={d.netIitDelta} />
+                          <DeltaTd value={d.physicalDelta} />
+                          <DeltaTd value={d.investedDelta} divider />
+                          <DeltaTd value={d.fdsDelta} accent="#00f2fe" />
+                          <DeltaTd value={d.utsDelta} accent="#10b981" />
+                          <DeltaTd value={d.treasuryDelta} accent="#818cf8" />
+                          <DeltaTd value={d.dividendsDelta} accent="#6366f1" />
+                          <DeltaTd value={d.pfcaFdsDelta} accent="#f43f5e" />
+                          <td className="hdt-wealth-cell">{formatCompact(d.totalWealth)}</td>
+                          <td style={{ textAlign: "center" }}>
+                            <button
+                              className="hist-edit-btn"
+                              onClick={() => handleOpenEdit(d.snapshotId)}
+                              title="Edit snapshot start and end dates"
+                            >
+                              <Pencil size={12} />
+                              <span>Edit</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="hist-chart-wrap">
-                <ResponsiveContainer width="100%" height={340}>
-                  <BarChart data={monthlyInvestments} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-                    <XAxis dataKey="monthLabel" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
-                    <Tooltip content={<LkrTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
-                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
-                    <ReferenceLine y={1000000} stroke="#f87171" strokeDasharray="3 3" label={{ value: "1M Target", fill: "#f87171", fontSize: 10, position: "insideTopRight" }} />
-                    <Bar dataKey="fdsDelta" name="Fixed Deposits" stackId="a" fill="#00f2fe" />
-                    <Bar dataKey="utsDelta" name="Unit Trusts" stackId="a" fill="#10b981" />
-                    <Bar dataKey="treasuryDelta" name="Treasury" stackId="a" fill="#818cf8" />
-                    <Bar dataKey="dividendsDelta" name="Dividends" stackId="a" fill="#6366f1" />
-                    <Bar dataKey="pfcaFdsDelta" name="PFCA FDs" stackId="a" fill="#f43f5e" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+
+              {/* Monthly Investment Additions Chart */}
+              {monthlyInvestments.length > 0 && (
+                <div className="glass-card hist-chart-card">
+                  <div className="hist-chart-hdr">
+                    <div>
+                      <h3>Monthly Investment Additions</h3>
+                      <p>
+                        Net new capital added (or withdrawn) per month, broken down by asset category.
+                      </p>
+                    </div>
+                    <TrendingUp size={18} className="hist-chart-icon" />
+                  </div>
+                  <div className="hist-chart-wrap">
+                    <ResponsiveContainer width="100%" height={340}>
+                      <BarChart data={monthlyInvestments} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+                        <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                        <XAxis dataKey="monthLabel" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                        <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
+                        <Tooltip content={<LkrTooltip />} />
+                        <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                        <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
+                        <ReferenceLine y={1000000} stroke="#f87171" strokeDasharray="3 3" label={{ value: "1M Baseline", fill: "#f87171", fontSize: 10, position: "insideTopRight" }} />
+                        <Bar dataKey="fdsDelta" name="Fixed Deposits" stackId="a" fill="#00f2fe" />
+                        <Bar dataKey="utsDelta" name="Unit Trusts" stackId="a" fill="#10b981" />
+                        <Bar dataKey="treasuryDelta" name="Treasury" stackId="a" fill="#818cf8" />
+                        <Bar dataKey="dividendsDelta" name="Dividends" stackId="a" fill="#6366f1" />
+                        <Bar dataKey="pfcaFdsDelta" name="PFCA FDs" stackId="a" fill="#f43f5e" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
-          {/* ── Section 3: All Snapshots Date Management ── */}
-          <div className="glass-card hist-chart-card">
-            <div className="hist-chart-hdr">
-              <div>
-                <h3>Manage All Snapshot Statement Periods</h3>
-                <p>
-                  View and update exact start and end dates for every recorded portfolio snapshot.
-                </p>
+          {/* ════════════════════ TAB 2: MONTHLY VIEW (PLANNED VS ACTUAL) ════════════════════ */}
+          {activeTab === "monthly" && (
+            <div className="monthly-commitment-view">
+              {/* Month Selector & Planned Input Bar */}
+              <div className="glass-card month-control-card">
+                <div className="month-control-top">
+                  <div className="month-selector-group">
+                    <label className="ctrl-label">
+                      <Calendar size={14} color="#00f2fe" />
+                      <span>Select Month to Review:</span>
+                    </label>
+                    <div className="month-buttons-scroll">
+                      {monthlyInvestments.map((m) => (
+                        <button
+                          key={m.monthKey}
+                          className={`month-pill ${selectedMonthKey === m.monthKey ? "active" : ""}`}
+                          onClick={() => setSelectedMonthKey(m.monthKey)}
+                        >
+                          {m.monthLabel}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Planned Commitment Input Form */}
+                  <form onSubmit={handleSaveCommitment} className="planned-input-form">
+                    <div className="planned-input-wrap">
+                      <label className="ctrl-label">
+                        <Target size={14} color="#38bdf8" />
+                        <span>Planned Commitment Value (LKR):</span>
+                      </label>
+                      <div className="input-with-btn">
+                        <span className="currency-prefix">Rs.</span>
+                        <input
+                          type="number"
+                          step="50000"
+                          min="0"
+                          value={plannedInput}
+                          onChange={(e) => setPlannedInput(e.target.value)}
+                          placeholder="e.g. 1000000"
+                          className="planned-num-input"
+                        />
+                        <button
+                          type="submit"
+                          disabled={savingCommitment}
+                          className="btn-save-commitment"
+                        >
+                          {commitmentSavedSuccess ? (
+                            <>
+                              <Check size={14} color="#10b981" />
+                              <span>Saved</span>
+                            </>
+                          ) : savingCommitment ? (
+                            <span>Saving...</span>
+                          ) : (
+                            <span>Set Target</span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="quick-presets">
+                  <span className="preset-label">Quick Presets:</span>
+                  {[500000, 750000, 1000000, 1250000, 1500000, 2000000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      className="preset-chip"
+                      onClick={() => {
+                        setPlannedInput(String(amt));
+                      }}
+                    >
+                      {formatCompact(amt)}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <Calendar size={18} className="hist-chart-icon" />
-            </div>
 
-            <div className="hist-delta-scroll">
-              <table className="hist-delta-tbl">
-                <thead>
-                  <tr>
-                    <th className="hdt-left">Snapshot Label</th>
-                    <th className="hdt-left">Timestamp</th>
-                    <th className="hdt-left" style={{ color: "#38bdf8" }}>Start Date</th>
-                    <th className="hdt-left" style={{ color: "#10b981" }}>End Date (As Of)</th>
-                    <th style={{ textAlign: "right" }}>Total Capital</th>
-                    <th style={{ textAlign: "center" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chronological.map((s) => {
-                    const t = s.totals || {};
-                    const d = new Date(s.timestamp);
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth() + 1).padStart(2, "0");
-                    const defaultStart = `${y}-${m}-01`;
-                    const defaultEnd = d.toISOString().slice(0, 10);
-                    const startDate = (t as any).startDate || defaultStart;
-                    const endDate = (t as any).endDate || defaultEnd;
+              {/* Monthly Comparison Dashboard */}
+              {currentMonthData && (
+                <>
+                  {/* Progress Comparison Hero Card */}
+                  <div className="glass-card comparison-hero-card">
+                    <div className="hero-header">
+                      <div>
+                        <h2>{currentMonthData.monthLabel} Commitment Performance</h2>
+                        <p className="hero-sub">
+                          Comparing planned allocation against actual net capital deployed in {currentMonthData.monthLabel}.
+                        </p>
+                      </div>
+                      <div className={`status-badge-lg ${currentMonthData.variance >= 0 ? "surplus" : "shortfall"}`}>
+                        {currentMonthData.variance >= 0 ? (
+                          <>
+                            <CheckCircle2 size={18} />
+                            <span>Commitment Achieved ({currentMonthData.pctAchieved.toFixed(1)}%)</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle size={18} />
+                            <span>Commitment Gap ({currentMonthData.pctAchieved.toFixed(1)}%)</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
 
-                    return (
-                      <tr key={s.id}>
-                        <td className="hdt-left">
-                          <strong>{s.label || d.toLocaleDateString("en-LK", { month: "short", day: "numeric", year: "numeric" })}</strong>
-                        </td>
-                        <td className="hdt-left" style={{ color: "#9ca3af", fontSize: "0.75rem" }}>
-                          {d.toLocaleDateString("en-LK", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </td>
-                        <td className="hdt-left font-mono" style={{ color: "#38bdf8", fontSize: "0.78rem" }}>
-                          {startDate}
-                        </td>
-                        <td className="hdt-left font-mono" style={{ color: "#10b981", fontSize: "0.78rem" }}>
-                          {endDate}
-                        </td>
-                        <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
-                          {formatLKR(t.invested || 0)}
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <button
-                            className="hist-edit-btn"
-                            onClick={() => handleOpenEdit(s.id)}
-                          >
-                            <Pencil size={13} />
-                            <span>Edit Dates</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    {/* Visual Progress Bar */}
+                    <div className="progress-section">
+                      <div className="progress-label-row">
+                        <span className="prog-title">Commitment Fulfillment Rate</span>
+                        <span className="prog-pct">{currentMonthData.pctAchieved.toFixed(1)}%</span>
+                      </div>
+                      <div className="prog-bar-track">
+                        <div
+                          className={`prog-bar-fill ${currentMonthData.variance >= 0 ? "fill-surplus" : "fill-progress"}`}
+                          style={{ width: `${Math.min(100, Math.max(0, currentMonthData.pctAchieved))}%` }}
+                        />
+                      </div>
+                      <div className="prog-markers">
+                        <span>0%</span>
+                        <span>50%</span>
+                        <span style={{ color: "#38bdf8", fontWeight: 700 }}>100% Target ({formatCompact(currentMonthData.plannedVal)})</span>
+                        <span>150%+</span>
+                      </div>
+                    </div>
+
+                    {/* 3 Key Comparison Cards */}
+                    <div className="grid-comparison-kpis">
+                      <div className="cmp-card planned-card">
+                        <div className="cmp-card-top">
+                          <span className="cmp-tag">Planned Commitment</span>
+                          <Target size={16} className="cmp-icon" />
+                        </div>
+                        <div className="cmp-val">{formatLKR(currentMonthData.plannedVal)}</div>
+                        <span className="cmp-note">Target investment for the month</span>
+                      </div>
+
+                      <div className="cmp-card actual-card">
+                        <div className="cmp-card-top">
+                          <span className="cmp-tag">Actual Commitment Done</span>
+                          <Landmark size={16} className="cmp-icon" />
+                        </div>
+                        <div className="cmp-val text-cyan">{formatLKR(currentMonthData.actualVal)}</div>
+                        <span className="cmp-note">Net new capital deployed</span>
+                      </div>
+
+                      <div className={`cmp-card ${currentMonthData.variance >= 0 ? "variance-card-pos" : "variance-card-neg"}`}>
+                        <div className="cmp-card-top">
+                          <span className="cmp-tag">
+                            {currentMonthData.variance >= 0 ? "Net Surplus Added" : "Commitment Shortfall"}
+                          </span>
+                          {currentMonthData.variance >= 0 ? (
+                            <ArrowUpRight size={16} className="cmp-icon text-emerald" />
+                          ) : (
+                            <ArrowDownRight size={16} className="cmp-icon text-coral" />
+                          )}
+                        </div>
+                        <div className={`cmp-val ${currentMonthData.variance >= 0 ? "text-emerald" : "text-coral"}`}>
+                          {currentMonthData.variance >= 0 ? "+" : ""}{formatLKR(currentMonthData.variance)}
+                        </div>
+                        <span className="cmp-note">
+                          {currentMonthData.variance >= 0
+                            ? `Exceeded planned target by ${formatLKR(currentMonthData.variance)}`
+                            : `Need ${formatLKR(Math.abs(currentMonthData.variance))} to reach monthly goal`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Category Deployment Breakdown in Current Month */}
+                  <div className="glass-card hist-chart-card">
+                    <div className="hist-chart-hdr">
+                      <div>
+                        <h3>{currentMonthData.monthLabel} Asset Class Deployment Breakdown</h3>
+                        <p>Where the actual {formatLKR(currentMonthData.actualVal)} was invested during this month.</p>
+                      </div>
+                      <PieIcon size={18} className="hist-chart-icon" />
+                    </div>
+
+                    <div className="grid-category-breakdown">
+                      {currentMonthData.categoryBreakdown.map((cat) => {
+                        const pctOfActual = currentMonthData.actualVal > 0 ? (cat.raw / currentMonthData.actualVal) * 100 : 0;
+                        return (
+                          <div key={cat.name} className="cat-kpi-card" style={{ borderLeft: `3px solid ${cat.color}` }}>
+                            <div className="cat-kpi-hdr">
+                              <span className="cat-name">{cat.name}</span>
+                              <span className="cat-pct">{pctOfActual > 0 ? `${pctOfActual.toFixed(1)}%` : "0%"}</span>
+                            </div>
+                            <div className="cat-amount" style={{ color: cat.raw >= 0 ? cat.color : "#f87171" }}>
+                              {cat.raw >= 0 ? "+" : ""}{formatLKR(cat.raw)}
+                            </div>
+                            <div className="cat-bar-track">
+                              <div
+                                className="cat-bar-fill"
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, pctOfActual))}%`,
+                                  backgroundColor: cat.color,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Multi-Month Planned vs Actual History Table */}
+                  <div className="glass-card hist-chart-card">
+                    <div className="hist-chart-hdr">
+                      <div>
+                        <h3>All Months Planned vs Actual Ledger</h3>
+                        <p>Historical comparison of planned commitments against actual additions.</p>
+                      </div>
+                      <BarChart3 size={18} className="hist-chart-icon" />
+                    </div>
+
+                    <div className="hist-delta-scroll">
+                      <table className="hist-delta-tbl">
+                        <thead>
+                          <tr>
+                            <th className="hdt-left">Month</th>
+                            <th style={{ textAlign: "right", color: "#38bdf8" }}>Planned Commitment</th>
+                            <th style={{ textAlign: "right", color: "#00f2fe" }}>Actual Deployed</th>
+                            <th style={{ textAlign: "right" }}>Variance (LKR)</th>
+                            <th style={{ textAlign: "right" }}>Fulfillment %</th>
+                            <th style={{ textAlign: "center" }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {monthlyInvestments.map((m) => {
+                            const pAmt = commitments[m.monthKey]?.plannedAmount ?? 1000000;
+                            const aAmt = m.totalDelta;
+                            const diff = aAmt - pAmt;
+                            const pct = pAmt > 0 ? (aAmt / pAmt) * 100 : 0;
+                            const isMet = diff >= 0;
+
+                            return (
+                              <tr
+                                key={m.monthKey}
+                                className={selectedMonthKey === m.monthKey ? "selected-row" : ""}
+                                onClick={() => setSelectedMonthKey(m.monthKey)}
+                                style={{ cursor: "pointer" }}
+                              >
+                                <td className="hdt-left">
+                                  <strong>{m.monthLabel}</strong>
+                                  {selectedMonthKey === m.monthKey && (
+                                    <span className="active-row-tag">Active</span>
+                                  )}
+                                </td>
+                                <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#38bdf8" }}>
+                                  {formatLKR(pAmt)}
+                                </td>
+                                <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#00f2fe", fontWeight: 700 }}>
+                                  {formatLKR(aAmt)}
+                                </td>
+                                <td
+                                  style={{
+                                    textAlign: "right",
+                                    fontFamily: "var(--font-mono)",
+                                    fontWeight: 700,
+                                    color: isMet ? "#10b981" : "#f87171",
+                                  }}
+                                >
+                                  {diff >= 0 ? "+" : ""}{formatLKR(diff)}
+                                </td>
+                                <td
+                                  style={{
+                                    textAlign: "right",
+                                    fontFamily: "var(--font-mono)",
+                                    fontWeight: 700,
+                                    color: isMet ? "#10b981" : "#f87171",
+                                  }}
+                                >
+                                  {pct.toFixed(1)}%
+                                </td>
+                                <td style={{ textAlign: "center" }}>
+                                  <span className={`table-status-pill ${isMet ? "met" : "unmet"}`}>
+                                    {isMet ? "Target Met" : "Shortfall"}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -665,7 +1054,7 @@ export default function InvestmentCommitmentPage() {
                   <Calendar size={18} color="#00f2fe" />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#fff" }}>Edit Snapshot Period</h3>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#fff" }}>Edit Snapshot Period Dates</h3>
                   <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#9ca3af" }}>
                     Configure start date, end date, and display label
                   </p>
@@ -793,7 +1182,7 @@ export default function InvestmentCommitmentPage() {
         .hist-badge-pill {
           display: inline-flex;
           align-items: center;
-          padding: 3px 8px;
+          padding: 4px 10px;
           border-radius: 6px;
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255, 255, 255, 0.1);
@@ -812,14 +1201,50 @@ export default function InvestmentCommitmentPage() {
         .hist-header-actions {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+
+        /* ── Tab Switcher ── */
+        .hist-tab-switcher {
+          display: flex;
+          background: rgba(0, 0, 0, 0.4);
+          padding: 3px;
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .hist-tab-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 14px;
+          border-radius: 7px;
+          background: transparent;
+          border: none;
+          color: #9ca3af;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .hist-tab-btn:hover {
+          color: #fff;
+        }
+
+        .hist-tab-btn.active {
+          background: #00f2fe;
+          color: #000;
+          font-weight: 700;
+          box-shadow: 0 2px 8px rgba(0, 242, 254, 0.3);
         }
 
         .hist-btn-secondary {
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          padding: 8px 14px;
+          padding: 7px 14px;
           border-radius: 8px;
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1006,6 +1431,416 @@ export default function InvestmentCommitmentPage() {
         .hist-edit-btn:hover {
           background: rgba(0, 242, 254, 0.18);
           border-color: rgba(0, 242, 254, 0.4);
+        }
+
+        /* ── Monthly View Components ── */
+        .monthly-commitment-view {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+
+        .month-control-card {
+          padding: 1.4rem;
+        }
+
+        .month-control-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 1.5rem;
+          flex-wrap: wrap;
+        }
+
+        .ctrl-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.76rem;
+          font-weight: 700;
+          color: #cbd5e1;
+          margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+
+        .month-buttons-scroll {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+        }
+
+        .month-pill {
+          padding: 6px 14px;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #9ca3af;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 0.15s;
+        }
+
+        .month-pill:hover {
+          background: rgba(255, 255, 255, 0.08);
+          color: #fff;
+        }
+
+        .month-pill.active {
+          background: rgba(0, 242, 254, 0.15);
+          border-color: #00f2fe;
+          color: #00f2fe;
+          font-weight: 700;
+        }
+
+        .planned-input-form {
+          min-width: 320px;
+        }
+
+        .input-with-btn {
+          display: flex;
+          align-items: center;
+          position: relative;
+        }
+
+        .currency-prefix {
+          position: absolute;
+          left: 12px;
+          color: #9ca3af;
+          font-size: 0.85rem;
+          font-weight: 600;
+        }
+
+        .planned-num-input {
+          flex: 1;
+          padding: 9px 12px 9px 40px;
+          border-radius: 8px 0 0 8px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-right: none;
+          color: #fff;
+          font-size: 0.9rem;
+          font-family: var(--font-mono);
+          font-weight: 700;
+          outline: none;
+        }
+
+        .planned-num-input:focus {
+          border-color: #00f2fe;
+          background: rgba(0, 242, 254, 0.03);
+        }
+
+        .btn-save-commitment {
+          padding: 9px 16px;
+          border-radius: 0 8px 8px 0;
+          background: #00f2fe;
+          border: 1px solid #00f2fe;
+          color: #000;
+          font-size: 0.8rem;
+          font-weight: 700;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          transition: opacity 0.15s;
+        }
+
+        .btn-save-commitment:hover {
+          opacity: 0.9;
+        }
+
+        .quick-presets {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 1rem;
+          padding-top: 0.75rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          flex-wrap: wrap;
+        }
+
+        .preset-label {
+          font-size: 0.72rem;
+          color: #6b7280;
+          font-weight: 600;
+        }
+
+        .preset-chip {
+          padding: 3px 8px;
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #9ca3af;
+          font-size: 0.72rem;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .preset-chip:hover {
+          background: rgba(255, 255, 255, 0.08);
+          color: #fff;
+        }
+
+        /* ── Comparison Hero Card ── */
+        .comparison-hero-card {
+          padding: 1.6rem;
+        }
+
+        .hero-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 1rem;
+          flex-wrap: wrap;
+          margin-bottom: 1.5rem;
+        }
+
+        .hero-header h2 {
+          margin: 0;
+          font-size: 1.25rem;
+          color: #fff;
+        }
+
+        .hero-sub {
+          margin: 4px 0 0;
+          font-size: 0.8rem;
+          color: #94a3b8;
+        }
+
+        .status-badge-lg {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 14px;
+          border-radius: 999px;
+          font-size: 0.82rem;
+          font-weight: 700;
+        }
+
+        .status-badge-lg.surplus {
+          background: rgba(16, 185, 129, 0.12);
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          color: #10b981;
+        }
+
+        .status-badge-lg.shortfall {
+          background: rgba(248, 113, 113, 0.12);
+          border: 1px solid rgba(248, 113, 113, 0.3);
+          color: #f87171;
+        }
+
+        /* ── Progress Section ── */
+        .progress-section {
+          margin-bottom: 1.75rem;
+          padding: 1rem 1.2rem;
+          background: rgba(0, 0, 0, 0.3);
+          border-radius: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .progress-label-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+
+        .prog-title {
+          font-size: 0.76rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #94a3b8;
+        }
+
+        .prog-pct {
+          font-size: 1.1rem;
+          font-weight: 800;
+          font-family: var(--font-display);
+          color: #00f2fe;
+        }
+
+        .prog-bar-track {
+          height: 12px;
+          background: rgba(255, 255, 255, 0.06);
+          border-radius: 999px;
+          overflow: hidden;
+          position: relative;
+        }
+
+        .prog-bar-fill {
+          height: 100%;
+          border-radius: 999px;
+          transition: width 0.4s ease;
+        }
+
+        .fill-progress {
+          background: linear-gradient(90deg, #38bdf8, #00f2fe);
+        }
+
+        .fill-surplus {
+          background: linear-gradient(90deg, #00f2fe, #10b981);
+        }
+
+        .prog-markers {
+          display: flex;
+          justify-content: space-between;
+          font-size: 0.7rem;
+          color: #64748b;
+          margin-top: 6px;
+        }
+
+        /* ── 3 Key Comparison Cards ── */
+        .grid-comparison-kpis {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 1rem;
+        }
+
+        .cmp-card {
+          padding: 1.2rem;
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .cmp-card-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .cmp-tag {
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #94a3b8;
+          font-weight: 700;
+        }
+
+        .cmp-icon {
+          color: #64748b;
+        }
+
+        .cmp-val {
+          font-size: 1.35rem;
+          font-weight: 800;
+          font-family: var(--font-display);
+          color: #fff;
+          margin-top: 2px;
+        }
+
+        .cmp-note {
+          font-size: 0.72rem;
+          color: #64748b;
+        }
+
+        .variance-card-pos {
+          border-color: rgba(16, 185, 129, 0.25);
+          background: rgba(16, 185, 129, 0.03);
+        }
+
+        .variance-card-neg {
+          border-color: rgba(248, 113, 113, 0.25);
+          background: rgba(248, 113, 113, 0.03);
+        }
+
+        /* ── Category Breakdown Cards ── */
+        .grid-category-breakdown {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 1rem;
+        }
+
+        .cat-kpi-card {
+          padding: 1rem;
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .cat-kpi-hdr {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .cat-name {
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: #fff;
+        }
+
+        .cat-pct {
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: #94a3b8;
+        }
+
+        .cat-amount {
+          font-size: 1.1rem;
+          font-weight: 800;
+          font-family: var(--font-mono);
+        }
+
+        .cat-bar-track {
+          height: 4px;
+          background: rgba(255, 255, 255, 0.06);
+          border-radius: 999px;
+          overflow: hidden;
+          margin-top: 2px;
+        }
+
+        .cat-bar-fill {
+          height: 100%;
+          border-radius: 999px;
+        }
+
+        /* ── Table enhancements ── */
+        .selected-row td {
+          background: rgba(0, 242, 254, 0.08) !important;
+        }
+
+        .active-row-tag {
+          display: inline-block;
+          margin-left: 8px;
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: #00f2fe;
+          color: #000;
+          font-size: 0.65rem;
+          font-weight: 800;
+          text-transform: uppercase;
+        }
+
+        .table-status-pill {
+          display: inline-block;
+          padding: 3px 8px;
+          border-radius: 999px;
+          font-size: 0.7rem;
+          font-weight: 700;
+        }
+
+        .table-status-pill.met {
+          background: rgba(16, 185, 129, 0.15);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .table-status-pill.unmet {
+          background: rgba(248, 113, 113, 0.15);
+          color: #f87171;
+          border: 1px solid rgba(248, 113, 113, 0.3);
         }
 
         /* ── Modal Overlay ── */

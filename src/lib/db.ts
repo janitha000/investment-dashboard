@@ -65,6 +65,14 @@ export async function ensureSchema(): Promise<void> {
         VALUES (1, '{}'::jsonb)
         ON CONFLICT (id) DO NOTHING
       `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS monthly_commitments (
+          month TEXT PRIMARY KEY,
+          planned_amount NUMERIC NOT NULL DEFAULT 0,
+          notes TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
     })().catch((err) => {
       schemaReady = null; // allow retry on next request
       throw err;
@@ -327,4 +335,54 @@ export async function saveTarget(data: TargetData): Promise<void> {
     ON CONFLICT (id) DO UPDATE
     SET data = EXCLUDED.data, updated_at = NOW()
   `;
+}
+
+export type MonthlyCommitment = {
+  month: string; // "YYYY-MM"
+  plannedAmount: number;
+  notes?: string | null;
+  updatedAt?: string;
+};
+
+export async function getMonthlyCommitments(): Promise<Record<string, MonthlyCommitment>> {
+  const sql = await sqlReady();
+  const rows = await sql`
+    SELECT month, planned_amount, notes, updated_at
+    FROM monthly_commitments
+  `;
+  const result: Record<string, MonthlyCommitment> = {};
+  for (const r of rows) {
+    const m = String(r.month);
+    result[m] = {
+      month: m,
+      plannedAmount: Number(r.planned_amount) || 0,
+      notes: (r.notes as string | null) ?? null,
+      updatedAt: r.updated_at ? new Date(r.updated_at as string).toISOString() : undefined,
+    };
+  }
+  return result;
+}
+
+export async function saveMonthlyCommitment(
+  month: string,
+  plannedAmount: number,
+  notes?: string | null
+): Promise<MonthlyCommitment> {
+  const sql = await sqlReady();
+  const amt = Math.max(0, Number(plannedAmount) || 0);
+  const n = notes ?? null;
+  await sql`
+    INSERT INTO monthly_commitments (month, planned_amount, notes, updated_at)
+    VALUES (${month}, ${amt}, ${n}, NOW())
+    ON CONFLICT (month) DO UPDATE SET
+      planned_amount = EXCLUDED.planned_amount,
+      notes = EXCLUDED.notes,
+      updated_at = NOW()
+  `;
+  return {
+    month,
+    plannedAmount: amt,
+    notes: n,
+    updatedAt: new Date().toISOString(),
+  };
 }
