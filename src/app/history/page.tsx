@@ -23,6 +23,8 @@ import {
   TrendingDown,
   AlertTriangle,
   CheckCircle2,
+  ChevronRight,
+  Landmark,
 } from "lucide-react";
 
 const INFLATION_RATE = 0.06;
@@ -730,106 +732,24 @@ export default function HistoryPage() {
             </div>
           </div>
 
-          {/* ── Part 1: Snapshot-to-snapshot delta table ── */}
-          {snapshotDeltas.length > 0 && (
-            <div className="glass-card hist-chart-card">
-              <div className="hist-chart-hdr">
-                <div>
-                  <h3>Snapshot-to-snapshot progress</h3>
-                  <p>
-                    Income and capital changes between consecutive snapshots —
-                    <span style={{ color: "#10b981", marginLeft: 6 }}>▲ growth</span>
-                    <span style={{ color: "#f87171", marginLeft: 8 }}>▼ decline</span>
-                    <span style={{ color: "#6b7280", marginLeft: 8 }}>— no change</span>
-                  </p>
-                </div>
-                <HistoryIcon size={18} className="hist-chart-icon" />
+          {/* ── Investment Commitment Link Card ── */}
+          <div className="glass-card hist-chart-card" style={{ background: "rgba(0, 242, 254, 0.03)", border: "1px solid rgba(0, 242, 254, 0.15)" }}>
+            <div className="hist-chart-hdr" style={{ marginBottom: 0, alignItems: "center" }}>
+              <div>
+                <h3 style={{ display: "flex", alignItems: "center", gap: 8, color: "#fff" }}>
+                  <Landmark size={18} color="#00f2fe" />
+                  <span>Snapshot-to-Snapshot Progress &amp; Monthly Additions</span>
+                </h3>
+                <p>
+                  Moved to the dedicated <strong>Investment Commitment</strong> section with snapshot start &amp; end date configuration.
+                </p>
               </div>
-
-              <div className="hist-delta-scroll">
-                <table className="hist-delta-tbl">
-                  <colgroup>
-                    <col className="hdt-col-period" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-num hdt-col-divider" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-num" />
-                    <col className="hdt-col-wealth" />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="hdt-left">Period</th>
-                      <th>Gross /mo</th>
-                      <th>Net IIT /mo</th>
-                      <th>Cash /mo</th>
-                      <th className="hdt-divider">Capital Δ</th>
-                      <th style={{ color: "#00f2fe" }}>FDs Δ</th>
-                      <th style={{ color: "#10b981" }}>UTs Δ</th>
-                      <th style={{ color: "#818cf8" }}>Treasury Δ</th>
-                      <th style={{ color: "#6366f1" }}>Dividends Δ</th>
-                      <th style={{ color: "#f43f5e" }}>PFCA Δ</th>
-                      <th className="hdt-wealth-th">Total Wealth</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {snapshotDeltas.map((d, i) => (
-                      <tr key={i}>
-                        <td className="hdt-left hdt-period">{d.to}</td>
-                        <DeltaTd value={d.grossDelta} />
-                        <DeltaTd value={d.netIitDelta} />
-                        <DeltaTd value={d.physicalDelta} />
-                        <DeltaTd value={d.investedDelta} divider />
-                        <DeltaTd value={d.fdsDelta} accent="#00f2fe" />
-                        <DeltaTd value={d.utsDelta} accent="#10b981" />
-                        <DeltaTd value={d.treasuryDelta} accent="#818cf8" />
-                        <DeltaTd value={d.dividendsDelta} accent="#6366f1" />
-                        <DeltaTd value={d.pfcaFdsDelta} accent="#f43f5e" />
-                        <td className="hdt-wealth-cell">{formatCompact(d.totalWealth)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Link href="/investment-commitment" className="btn-primary" style={{ padding: "8px 16px", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span>View Investment Commitment</span>
+                <ChevronRight size={16} />
+              </Link>
             </div>
-          )}
-
-          {/* ── Part 1.5: Monthly Investments ── */}
-          {monthlyInvestments.length > 0 && (
-            <div className="glass-card hist-chart-card">
-              <div className="hist-chart-hdr">
-                <div>
-                  <h3>Monthly Investment Additions</h3>
-                  <p>
-                    Net new capital added (or withdrawn) per month, broken down by category. 
-                  </p>
-                </div>
-                <TrendingUp size={18} className="hist-chart-icon" />
-              </div>
-              <div className="hist-chart-wrap">
-                <ResponsiveContainer width="100%" height={340}>
-                  <BarChart data={monthlyInvestments} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-                    <XAxis dataKey="monthLabel" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
-                    <Tooltip content={<LkrTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
-                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
-                    <ReferenceLine y={1000000} stroke="#f87171" strokeDasharray="3 3" />
-                    <Bar dataKey="fdsDelta" name="Fixed Deposits" stackId="a" fill="#00f2fe" />
-                    <Bar dataKey="utsDelta" name="Unit Trusts" stackId="a" fill="#10b981" />
-                    <Bar dataKey="treasuryDelta" name="Treasury" stackId="a" fill="#818cf8" />
-                    <Bar dataKey="dividendsDelta" name="Dividends" stackId="a" fill="#6366f1" />
-                    <Bar dataKey="pfcaFdsDelta" name="PFCA FDs" stackId="a" fill="#f43f5e" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* ── Part 2: Inflation Erosion ── */}
           <div className="glass-card hist-chart-card hist-erosion-card">

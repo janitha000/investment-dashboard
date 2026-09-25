@@ -17,6 +17,7 @@ import {
   History,
   Flame,
   BarChart2,
+  Landmark,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -27,6 +28,7 @@ export default function Sidebar() {
 
   const menuItems = [
     { name: "My Portfolio", href: "/portfolio", icon: Briefcase },
+    { name: "Investment Commitment", href: "/investment-commitment", icon: Landmark },
     { name: "What-If Scenarios", href: "/scenarios", icon: FlaskConical },
     { name: "Income Target", href: "/target", icon: Target },
     { name: "History", href: "/history", icon: History },

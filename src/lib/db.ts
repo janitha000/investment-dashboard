@@ -181,6 +181,31 @@ export async function deleteSnapshot(id: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+export async function updateSnapshot(id: string, updates: Partial<SnapshotRow>): Promise<boolean> {
+  const sql = await sqlReady();
+  const existingRows = await sql`
+    SELECT id, timestamp, label, portfolio, totals
+    FROM portfolio_snapshots
+    WHERE id = ${id}
+  `;
+  if (!existingRows.length) return false;
+  const curr = existingRows[0];
+  const newTimestamp = updates.timestamp ?? curr.timestamp;
+  const newLabel = updates.label !== undefined ? updates.label : curr.label;
+  const newPortfolio = updates.portfolio ?? curr.portfolio;
+  const newTotals = { ...(curr.totals as Record<string, unknown>), ...(updates.totals ?? {}) };
+
+  await sql`
+    UPDATE portfolio_snapshots
+    SET timestamp = ${newTimestamp},
+        label = ${newLabel},
+        portfolio = ${jsonParam(newPortfolio)}::jsonb,
+        totals = ${jsonParam(newTotals)}::jsonb
+    WHERE id = ${id}
+  `;
+  return true;
+}
+
 export async function getScenarios(): Promise<unknown[]> {
   const sql = await sqlReady();
   const rows = await sql`SELECT data FROM scenarios WHERE id = 1`;
