@@ -960,7 +960,7 @@ export default function InvestmentCommitmentPage() {
         cumulativeAdditions: cumAdditions,
         actualEndWealth,
         expectedEndWealth,
-        projectedTotalWealth: currentWealth,
+        projectedTotalWealth: expectedEndWealth,
         theoreticalPlannedWealth: theoreticalWealth,
         totalGain,
         chartActualAddition: actualAddition,
@@ -2007,8 +2007,8 @@ export default function InvestmentCommitmentPage() {
                         <th style={{ textAlign: "right", color: "#00f2fe" }}>Actual Deployed</th>
                         <th style={{ textAlign: "center" }}>Achievement / Status</th>
                         <th style={{ textAlign: "right", color: "#818cf8" }}>Cumulative Added</th>
-                        <th className="hdt-col-wealth" style={{ textAlign: "right" }}>Portfolio Wealth</th>
-                        <th style={{ textAlign: "right", color: "#34d399" }}>Total Growth</th>
+                        <th className="hdt-col-wealth" style={{ textAlign: "right", color: "#38bdf8" }}>Projected Wealth</th>
+                        <th className="hdt-col-wealth" style={{ textAlign: "right", color: "#10b981" }}>Actual Wealth</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2115,14 +2115,11 @@ export default function InvestmentCommitmentPage() {
                             <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#818cf8" }}>
                               +{formatCompact(item.cumulativeAdditions)}
                             </td>
-                            <td className="hdt-wealth-cell" style={{ textAlign: "right", color: "#fff", fontWeight: 700 }}>
-                              <div>{formatLKR(item.projectedTotalWealth)}</div>
-                              <span style={{ fontSize: "0.68rem", color: isPassed ? "#34d399" : "#38bdf8", display: "block" }}>
-                                {isPassed ? "Actual Wealth" : "Projected"}
-                              </span>
+                            <td className="hdt-wealth-cell" style={{ textAlign: "right", color: "#38bdf8", fontWeight: 700 }}>
+                              {formatLKR(item.expectedEndWealth)}
                             </td>
-                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#34d399", fontWeight: 700 }}>
-                              +{formatCompact(item.totalGain)}
+                            <td className="hdt-wealth-cell" style={{ textAlign: "right", color: item.actualEndWealth !== null ? "#10b981" : "#6b7280", fontWeight: 700 }}>
+                              {item.actualEndWealth !== null ? formatLKR(item.actualEndWealth) : "—"}
                             </td>
                           </tr>
                         );
