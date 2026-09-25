@@ -294,6 +294,9 @@ export default function InvestmentCommitmentPage() {
   const [customSuccess, setCustomSuccess] = useState(false);
 
   // Investment Plan & Wealth Timeline State
+  const [planStartMonth, setPlanStartMonth] = useState<string>("2026-08");
+  const [planSelectedMonthKey, setPlanSelectedMonthKey] = useState<string>("2026-08");
+  const [planSelectedMonthInput, setPlanSelectedMonthInput] = useState<string>("");
   const [planHorizonMonths, setPlanHorizonMonths] = useState<number>(12);
   const [planAnnualReturnRate, setPlanAnnualReturnRate] = useState<string>("12.0");
   const [planStartingCapital, setPlanStartingCapital] = useState<string>("");
@@ -826,45 +829,77 @@ export default function InvestmentCommitmentPage() {
     ? monthlyInvestments.reduce((sum, m) => sum + m.totalDelta, 0) / totalMonths
     : 0;
 
-  // Wealth Timeline & Projection Data for Plan Tab
+  // Wealth Timeline & Projection Data for Plan Tab (Starting from Aug 2026)
   const planTimelineData = useMemo(() => {
-    const startCap = Number(planStartingCapital) > 0 ? Number(planStartingCapital) : (latestWealth || 58000000);
+    let startYear = 2026;
+    let startMonthNum = 8;
+    if (planStartMonth && /^\d{4}-\d{2}$/.test(planStartMonth)) {
+      const parts = planStartMonth.split("-");
+      startYear = parseInt(parts[0], 10);
+      startMonthNum = parseInt(parts[1], 10);
+    }
+
+    const firstMonthData = monthlyDataMap.get(planStartMonth);
+    const calculatedBase = firstMonthData
+      ? firstMonthData.startWealth
+      : (latestWealth > 0 ? latestWealth : 56700000);
+
+    const startCap = Number(planStartingCapital) > 0
+      ? Number(planStartingCapital)
+      : calculatedBase;
+
     const annualRate = Number(planAnnualReturnRate) >= 0 ? Number(planAnnualReturnRate) : 12.0;
     const monthlyRate = (annualRate / 100) / 12;
     const defaultAdd = Number(planDefaultAddition) >= 0 ? Number(planDefaultAddition) : 1000000;
 
-    // Determine starting date (next month after latest snapshot)
-    let startDateObj = new Date();
-    if (chronological.length > 0) {
-      const lastSnap = chronological[chronological.length - 1];
-      const lastEnd = (lastSnap.totals as any)?.endDate || lastSnap.timestamp;
-      const d = new Date(lastEnd);
-      if (!isNaN(d.getTime())) {
-        startDateObj = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      }
-    }
+    const now = new Date();
+    const nowYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
     const timeline: Array<{
       monthIndex: number;
       monthKey: string;
       monthLabel: string;
+      isPassed: boolean;
+      isCurrent: boolean;
+      hasActualData: boolean;
       startingWealth: number;
       plannedAddition: number;
-      cumulativeAdditions: number;
+      actualAddition: number | null;
+      variance: number | null;
+      pctAchieved: number | null;
+      isAchieved: boolean | null;
       monthlyYield: number;
       cumulativeYield: number;
+      cumulativeAdditions: number;
+      actualEndWealth: number | null;
+      expectedEndWealth: number;
       projectedTotalWealth: number;
+      theoreticalPlannedWealth: number;
       totalGain: number;
+      chartActualAddition: number | null;
+      chartPlannedAddition: number;
+      chartActualWealth: number | null;
     }> = [];
 
     let currentWealth = startCap;
+    let theoreticalWealth = startCap;
     let cumAdditions = 0;
     let cumYield = 0;
+    let passedCount = 0;
+    let passedActualTotal = 0;
+    let passedPlannedTotal = 0;
 
     for (let i = 0; i < planHorizonMonths; i++) {
-      const mDate = new Date(startDateObj.getFullYear(), startDateObj.getMonth() + i, 1);
-      const yearMonth = `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, "0")}`;
+      const mDate = new Date(startYear, startMonthNum - 1 + i, 1);
+      const y = mDate.getFullYear();
+      const m = String(mDate.getMonth() + 1).padStart(2, "0");
+      const yearMonth = `${y}-${m}`;
       const monthLabel = mDate.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+
+      const hasActualData = monthlyDataMap.has(yearMonth);
+      const actualData = monthlyDataMap.get(yearMonth);
+      const isPassed = hasActualData || yearMonth < nowYearMonth;
+      const isCurrent = yearMonth === nowYearMonth;
 
       const customVal = customPlanAmounts[yearMonth];
       const existingSaved = commitments[yearMonth]?.plannedAmount;
@@ -875,24 +910,70 @@ export default function InvestmentCommitmentPage() {
           : defaultAdd;
 
       const startingWealth = currentWealth;
-      const monthlyYield = (startingWealth + plannedAddition / 2) * monthlyRate;
-      currentWealth = startingWealth + plannedAddition + monthlyYield;
-      cumAdditions += plannedAddition;
-      cumYield += monthlyYield;
+      const actualAddition = hasActualData && actualData ? actualData.totalDelta : null;
+      const actualEndWealth = hasActualData && actualData ? actualData.endWealth : null;
 
+      let variance: number | null = null;
+      let pctAchieved: number | null = null;
+      let isAchieved: boolean | null = null;
+
+      if (hasActualData && actualAddition !== null) {
+        variance = actualAddition - plannedAddition;
+        pctAchieved = plannedAddition > 0 ? (actualAddition / plannedAddition) * 100 : 0;
+        isAchieved = actualAddition >= plannedAddition;
+        passedCount++;
+        passedActualTotal += actualAddition;
+        passedPlannedTotal += plannedAddition;
+      }
+
+      // Expected wealth if pure plan was followed
+      const expectedYield = (startingWealth + plannedAddition / 2) * monthlyRate;
+      const expectedEndWealth = startingWealth + plannedAddition + expectedYield;
+
+      // Pure theoretical planned trajectory from 08/2026
+      const theoYield = (theoreticalWealth + plannedAddition / 2) * monthlyRate;
+      theoreticalWealth = theoreticalWealth + plannedAddition + theoYield;
+
+      let monthlyYield = 0;
+      if (hasActualData && actualAddition !== null && actualEndWealth !== null) {
+        // Anchor future growth on actual real wealth at end of month!
+        currentWealth = actualEndWealth;
+        monthlyYield = Math.max(0, actualEndWealth - startingWealth - actualAddition);
+        cumAdditions += actualAddition;
+      } else {
+        // Future / projected month
+        monthlyYield = expectedYield;
+        currentWealth = expectedEndWealth;
+        cumAdditions += plannedAddition;
+      }
+
+      cumYield += monthlyYield;
       const totalGain = currentWealth - startCap;
 
       timeline.push({
         monthIndex: i + 1,
         monthKey: yearMonth,
         monthLabel,
+        isPassed,
+        isCurrent,
+        hasActualData,
         startingWealth,
         plannedAddition,
-        cumulativeAdditions: cumAdditions,
+        actualAddition,
+        variance,
+        pctAchieved,
+        isAchieved,
         monthlyYield,
         cumulativeYield: cumYield,
+        cumulativeAdditions: cumAdditions,
+        actualEndWealth,
+        expectedEndWealth,
         projectedTotalWealth: currentWealth,
+        theoreticalPlannedWealth: theoreticalWealth,
         totalGain,
+        chartActualAddition: actualAddition,
+        chartPlannedAddition: plannedAddition,
+        chartActualWealth: actualEndWealth,
       });
     }
 
@@ -905,14 +986,19 @@ export default function InvestmentCommitmentPage() {
       totalAdded: cumAdditions,
       totalYieldEarned: cumYield,
       totalGrowthPct: startCap > 0 ? ((currentWealth - startCap) / startCap) * 100 : 0,
+      passedCount,
+      passedActualTotal,
+      passedPlannedTotal,
+      overallFulfillmentPct: passedPlannedTotal > 0 ? (passedActualTotal / passedPlannedTotal) * 100 : 0,
     };
   }, [
+    planStartMonth,
     planStartingCapital,
+    monthlyDataMap,
     latestWealth,
     planAnnualReturnRate,
     planDefaultAddition,
     planHorizonMonths,
-    chronological,
     customPlanAmounts,
     commitments,
   ]);
@@ -1603,10 +1689,10 @@ export default function InvestmentCommitmentPage() {
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Sliders size={18} color="#38bdf8" />
-                      <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Investment Plan & Wealth Projection Parameters</h3>
+                      <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Investment Plan &amp; Wealth Projection Parameters</h3>
                     </div>
                     <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#9ca3af" }}>
-                      Model your future portfolio growth by customizing upcoming monthly additions, horizon, and compound return yield.
+                      Model your portfolio growth starting from 08/2026, comparing passed months against actual realized investments and dynamically projecting future wealth.
                     </p>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1635,6 +1721,19 @@ export default function InvestmentCommitmentPage() {
 
                 <div className="plan-param-grid">
                   <div className="plan-param-group">
+                    <label>Start Month (Baseline)</label>
+                    <div className="input-affix-wrap">
+                      <input
+                        type="month"
+                        value={planStartMonth}
+                        onChange={(e) => setPlanStartMonth(e.target.value || "2026-08")}
+                        className="plan-num-input"
+                        style={{ color: "#38bdf8" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="plan-param-group">
                     <label>Starting Portfolio Capital (LKR)</label>
                     <div className="input-affix-wrap">
                       <span className="affix">Rs.</span>
@@ -1643,7 +1742,7 @@ export default function InvestmentCommitmentPage() {
                         step="500000"
                         value={planStartingCapital}
                         onChange={(e) => setPlanStartingCapital(e.target.value)}
-                        placeholder={String(latestWealth)}
+                        placeholder={String(planTimelineData.startCap)}
                         className="plan-num-input"
                       />
                     </div>
@@ -1680,7 +1779,7 @@ export default function InvestmentCommitmentPage() {
                     </div>
                   </div>
 
-                  <div className="plan-param-group">
+                  <div className="plan-param-group" style={{ gridColumn: "span 2" }}>
                     <label>Projection Horizon</label>
                     <div className="horizon-pills">
                       {[6, 12, 24, 36, 60].map((h) => (
@@ -1690,7 +1789,7 @@ export default function InvestmentCommitmentPage() {
                           className={`horizon-pill ${planHorizonMonths === h ? "active" : ""}`}
                           onClick={() => setPlanHorizonMonths(h)}
                         >
-                          {h < 12 ? `${h}M` : `${h / 12}Y`}
+                          {h < 12 ? `${h} Months` : `${h / 12} Years`}
                         </button>
                       ))}
                     </div>
@@ -1705,7 +1804,19 @@ export default function InvestmentCommitmentPage() {
                   <div className="kpi-value text-glow" style={{ color: "#00f2fe" }}>
                     {formatLKR(planTimelineData.targetEndWealth)}
                   </div>
-                  <span className="kpi-sub">Starting {formatCompact(planTimelineData.startCap)}</span>
+                  <span className="kpi-sub">From baseline {formatCompact(planTimelineData.startCap)} (08/2026)</span>
+                </div>
+
+                <div className="glass-card kpi-card">
+                  <span className="kpi-label">Passed Months Actual Added</span>
+                  <div className={`kpi-value ${planTimelineData.passedActualTotal >= planTimelineData.passedPlannedTotal ? "text-emerald" : "text-coral"}`}>
+                    {formatLKR(planTimelineData.passedActualTotal)}
+                  </div>
+                  <span className="kpi-sub">
+                    {planTimelineData.passedPlannedTotal > 0
+                      ? `${planTimelineData.overallFulfillmentPct.toFixed(1)}% of planned (${formatCompact(planTimelineData.passedPlannedTotal)})`
+                      : "Across recorded months"}
+                  </span>
                 </div>
 
                 <div className="glass-card kpi-card">
@@ -1713,40 +1824,32 @@ export default function InvestmentCommitmentPage() {
                   <div className="kpi-value text-cyan">
                     +{formatLKR(planTimelineData.totalAdded)}
                   </div>
-                  <span className="kpi-sub">Across {planHorizonMonths} planned additions</span>
+                  <span className="kpi-sub">Across {planHorizonMonths} planned months</span>
                 </div>
 
                 <div className="glass-card kpi-card">
                   <span className="kpi-label">Estimated Compound Yield</span>
-                  <div className="kpi-value text-emerald">
+                  <div className="kpi-value text-indigo">
                     +{formatLKR(planTimelineData.totalYieldEarned)}
                   </div>
                   <span className="kpi-sub">At {planTimelineData.annualRate}% annual return</span>
                 </div>
-
-                <div className="glass-card kpi-card">
-                  <span className="kpi-label">Total Projected Growth</span>
-                  <div className="kpi-value text-indigo">
-                    +{planTimelineData.totalGrowthPct.toFixed(1)}%
-                  </div>
-                  <span className="kpi-sub">Gain of {formatLKR(planTimelineData.targetEndWealth - planTimelineData.startCap)}</span>
-                </div>
               </div>
 
-              {/* Wealth Trajectory Timeline Chart */}
+              {/* ── Chart 1: Wealth Trajectory & Actual vs Planned Growth Curve ── */}
               <div className="glass-card hist-chart-card" style={{ marginTop: "1.25rem" }}>
                 <div className="hist-chart-hdr">
                   <div>
-                    <h3>Portfolio Wealth Growth Trajectory</h3>
+                    <h3>1. Portfolio Wealth Growth Trajectory</h3>
                     <p>
-                      Projected portfolio value combining starting capital, your planned monthly additions, and compounded reinvestment yields over the next {planHorizonMonths} months.
+                      Combines real actual portfolio wealth recorded in passed months (08/2026, 09/2026) with dynamically compounded future projections.
                     </p>
                   </div>
                   <Sparkles size={18} className="hist-chart-icon" color="#00f2fe" />
                 </div>
 
                 <div className="hist-chart-wrap">
-                  <ResponsiveContainer width="100%" height={360}>
+                  <ResponsiveContainer width="100%" height={340}>
                     <AreaChart data={planTimelineData.timeline} margin={{ top: 12, right: 16, left: 8, bottom: 0 }}>
                       <defs>
                         <linearGradient id="wealthGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1776,27 +1879,43 @@ export default function InvestmentCommitmentPage() {
                                 boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
                               }}
                             >
-                              <div style={{ color: "#fff", fontWeight: 700, marginBottom: 6 }}>
-                                {d.monthLabel} (Month {d.monthIndex})
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                                <span style={{ color: "#fff", fontWeight: 700 }}>
+                                  {d.monthLabel} (Month {d.monthIndex})
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: "0.68rem",
+                                    padding: "2px 6px",
+                                    borderRadius: "4px",
+                                    background: d.isPassed ? "rgba(16, 185, 129, 0.2)" : "rgba(56, 189, 248, 0.2)",
+                                    color: d.isPassed ? "#34d399" : "#38bdf8",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {d.isPassed ? "Realized / Passed" : "Future Projection"}
+                                </span>
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.8rem", color: "#00f2fe", fontWeight: 700 }}>
-                                <span>Projected Total Wealth:</span>
+                                <span>{d.isPassed ? "Actual Portfolio Wealth:" : "Projected Total Wealth:"}</span>
                                 <span>{formatLKR(d.projectedTotalWealth)}</span>
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#9ca3af", marginTop: 4 }}>
                                 <span>Planned Addition:</span>
                                 <span style={{ color: "#fff" }}>{formatLKR(d.plannedAddition)}</span>
                               </div>
+                              {d.actualAddition !== null && (
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: d.variance >= 0 ? "#10b981" : "#f87171", marginTop: 2 }}>
+                                  <span>Actual Addition:</span>
+                                  <span>{formatLKR(d.actualAddition)} ({d.pctAchieved.toFixed(0)}%)</span>
+                                </div>
+                              )}
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#10b981", marginTop: 2 }}>
-                                <span>Estimated Month Yield:</span>
+                                <span>Est. Monthly Yield:</span>
                                 <span>+{formatLKR(d.monthlyYield)}</span>
                               </div>
-                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#38bdf8", marginTop: 2 }}>
-                                <span>Cumulative Capital Added:</span>
-                                <span>+{formatLKR(d.cumulativeAdditions)}</span>
-                              </div>
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#818cf8", marginTop: 2, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 4 }}>
-                                <span>Total Gain from Start:</span>
+                                <span>Total Gain from 08/2026:</span>
                                 <span>+{formatLKR(d.totalGain)}</span>
                               </div>
                             </div>
@@ -1807,7 +1926,7 @@ export default function InvestmentCommitmentPage() {
                       <Area
                         type="monotone"
                         dataKey="projectedTotalWealth"
-                        name="Projected Total Wealth"
+                        name="Realized & Projected Wealth"
                         stroke="#00f2fe"
                         strokeWidth={2.5}
                         fillOpacity={1}
@@ -1818,18 +1937,98 @@ export default function InvestmentCommitmentPage() {
                 </div>
               </div>
 
-              {/* Upcoming Month-by-Month Editable Ledger Table */}
+              {/* ── Chart 2: Planned vs Actual Monthly Investment Additions (Different Chart) ── */}
+              <div className="glass-card hist-chart-card" style={{ marginTop: "1.25rem" }}>
+                <div className="hist-chart-hdr">
+                  <div>
+                    <h3>2. Planned Commitment vs Actual Deployed Additions</h3>
+                    <p>
+                      Side-by-side comparison of planned capital commitments against actual additions deployed for passed months (08/2026, 09/2026) and upcoming planned targets.
+                    </p>
+                  </div>
+                  <BarChart3 size={18} className="hist-chart-icon" color="#10b981" />
+                </div>
+
+                <div className="hist-chart-wrap">
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={planTimelineData.timeline} margin={{ top: 12, right: 16, left: 8, bottom: 0 }}>
+                      <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                      <XAxis dataKey="monthLabel" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={formatCompact} />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const d = payload[0]?.payload;
+                          if (!d) return null;
+                          return (
+                            <div
+                              style={{
+                                background: "rgba(10, 15, 29, 0.95)",
+                                border: "1px solid rgba(16, 185, 129, 0.3)",
+                                borderRadius: "8px",
+                                padding: "10px 14px",
+                                boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+                              }}
+                            >
+                              <div style={{ color: "#fff", fontWeight: 700, marginBottom: 6 }}>
+                                {d.monthLabel} {d.isPassed ? "(Passed)" : "(Upcoming)"}
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.8rem", color: "#38bdf8", fontWeight: 700 }}>
+                                <span>Planned Target:</span>
+                                <span>{formatLKR(d.plannedAddition)}</span>
+                              </div>
+                              {d.actualAddition !== null ? (
+                                <>
+                                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.8rem", color: "#00f2fe", fontWeight: 700, marginTop: 4 }}>
+                                    <span>Actual Deployed:</span>
+                                    <span>{formatLKR(d.actualAddition)}</span>
+                                  </div>
+                                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: d.variance >= 0 ? "#10b981" : "#f87171", marginTop: 4 }}>
+                                    <span>Variance:</span>
+                                    <span>{d.variance >= 0 ? "+" : ""}{formatLKR(d.variance)} ({d.pctAchieved.toFixed(0)}%)</span>
+                                  </div>
+                                </>
+                              ) : (
+                                <div style={{ fontSize: "0.72rem", color: "#6b7280", marginTop: 4 }}>
+                                  Target scheduled for future deployment
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                      <Bar dataKey="chartPlannedAddition" name="Planned Commitment" fill="#38bdf8" radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="chartActualAddition"
+                        name="Actual Deployed"
+                        radius={[4, 4, 0, 0]}
+                        fill="#10b981"
+                      >
+                        {planTimelineData.timeline.map((entry) => (
+                          <Cell
+                            key={entry.monthKey}
+                            fill={entry.actualAddition === null ? "transparent" : entry.variance && entry.variance >= 0 ? "#10b981" : "#f87171"}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* ── Multi-Month Plan & Performance Ledger Table ── */}
               <div className="glass-card hist-chart-card" style={{ marginTop: "1.25rem" }}>
                 <div className="hist-chart-hdr">
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <h3>Upcoming Monthly Investment Schedule &amp; Timeline Ledger</h3>
+                      <h3>3. Monthly Investment Schedule &amp; Performance Ledger</h3>
                       <span className="hist-badge-pill" style={{ color: "#38bdf8" }}>
-                        {planHorizonMonths} Upcoming Months
+                        Starting 08/2026 ({planHorizonMonths} Months)
                       </span>
                     </div>
                     <p>
-                      Customize your planned investment additions for each individual month. Values auto-compound into your projected total wealth.
+                      Track both historical passed months (08/2026, 09/2026) and upcoming commitments. Edit planned amounts inline to update projections.
                     </p>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1860,13 +2059,13 @@ export default function InvestmentCommitmentPage() {
                     <thead>
                       <tr>
                         <th className="hdt-left">Month</th>
-                        <th style={{ textAlign: "left", width: "210px", color: "#38bdf8" }}>
-                          Planned Addition (LKR)
+                        <th style={{ textAlign: "left", width: "190px", color: "#38bdf8" }}>
+                          Planned Target (LKR)
                         </th>
-                        <th style={{ textAlign: "right", color: "#00f2fe" }}>Cumulative Added</th>
+                        <th style={{ textAlign: "right", color: "#00f2fe" }}>Actual Deployed</th>
+                        <th style={{ textAlign: "center" }}>Achievement / Status</th>
                         <th style={{ textAlign: "right", color: "#10b981" }}>Est. Monthly Yield</th>
-                        <th style={{ textAlign: "right", color: "#818cf8" }}>Cumulative Yield</th>
-                        <th className="hdt-col-wealth" style={{ textAlign: "right" }}>Projected Wealth</th>
+                        <th className="hdt-col-wealth" style={{ textAlign: "right" }}>Portfolio Wealth</th>
                         <th style={{ textAlign: "right", color: "#34d399" }}>Total Gain</th>
                       </tr>
                     </thead>
@@ -1877,13 +2076,60 @@ export default function InvestmentCommitmentPage() {
                             ? customPlanAmounts[item.monthKey]
                             : String(item.plannedAddition);
 
+                        const isPassed = item.isPassed;
+                        const hasActual = item.actualAddition !== null;
+
                         return (
-                          <tr key={item.monthKey}>
+                          <tr
+                            key={item.monthKey}
+                            style={{
+                              background: item.isCurrent ? "rgba(56, 189, 248, 0.05)" : undefined,
+                            }}
+                          >
                             <td className="hdt-left">
-                              <strong>{item.monthLabel}</strong>
-                              <span style={{ fontSize: "0.7rem", color: "#6b7280", marginLeft: 6 }}>
-                                (M{item.monthIndex})
-                              </span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <strong>{item.monthLabel}</strong>
+                                {isPassed ? (
+                                  <span
+                                    style={{
+                                      fontSize: "0.65rem",
+                                      padding: "1px 6px",
+                                      borderRadius: "4px",
+                                      background: "rgba(16, 185, 129, 0.15)",
+                                      color: "#34d399",
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    Passed
+                                  </span>
+                                ) : item.isCurrent ? (
+                                  <span
+                                    style={{
+                                      fontSize: "0.65rem",
+                                      padding: "1px 6px",
+                                      borderRadius: "4px",
+                                      background: "rgba(56, 189, 248, 0.2)",
+                                      color: "#38bdf8",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    Current
+                                  </span>
+                                ) : (
+                                  <span
+                                    style={{
+                                      fontSize: "0.65rem",
+                                      padding: "1px 6px",
+                                      borderRadius: "4px",
+                                      background: "rgba(255, 255, 255, 0.05)",
+                                      color: "#9ca3af",
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    M{item.monthIndex}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td style={{ textAlign: "left" }}>
                               <div className="table-input-wrap">
@@ -1905,17 +2151,33 @@ export default function InvestmentCommitmentPage() {
                                 />
                               </div>
                             </td>
-                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#00f2fe" }}>
-                              +{formatCompact(item.cumulativeAdditions)}
+                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#00f2fe", fontWeight: 700 }}>
+                              {hasActual ? formatLKR(item.actualAddition!) : <span style={{ color: "#6b7280" }}>—</span>}
+                            </td>
+                            <td style={{ textAlign: "center" }}>
+                              {hasActual && item.variance !== null ? (
+                                <span
+                                  className={`table-status-pill ${item.isAchieved ? "met" : "unmet"}`}
+                                  style={{ whiteSpace: "nowrap" }}
+                                >
+                                  {item.isAchieved
+                                    ? `✓ Achieved (${item.pctAchieved?.toFixed(0)}%)`
+                                    : `Shortfall (${item.pctAchieved?.toFixed(0)}%)`}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: "0.72rem", color: "#9ca3af" }}>
+                                  Target Planned
+                                </span>
+                              )}
                             </td>
                             <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#10b981" }}>
                               +{formatLKR(item.monthlyYield)}
                             </td>
-                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#818cf8" }}>
-                              +{formatCompact(item.cumulativeYield)}
-                            </td>
                             <td className="hdt-wealth-cell" style={{ textAlign: "right", color: "#fff", fontWeight: 700 }}>
-                              {formatLKR(item.projectedTotalWealth)}
+                              <div>{formatLKR(item.projectedTotalWealth)}</div>
+                              <span style={{ fontSize: "0.68rem", color: isPassed ? "#34d399" : "#38bdf8", display: "block" }}>
+                                {isPassed ? "Actual Wealth" : "Projected"}
+                              </span>
                             </td>
                             <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#34d399", fontWeight: 700 }}>
                               +{formatCompact(item.totalGain)}
