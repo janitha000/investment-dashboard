@@ -386,3 +386,22 @@ export async function saveMonthlyCommitment(
     updatedAt: new Date().toISOString(),
   };
 }
+
+export async function saveBatchMonthlyCommitments(
+  items: Array<{ month: string; plannedAmount: number; notes?: string | null }>
+): Promise<Record<string, MonthlyCommitment>> {
+  const sql = await sqlReady();
+  for (const item of items) {
+    const amt = Math.max(0, Number(item.plannedAmount) || 0);
+    const n = item.notes ?? null;
+    await sql`
+      INSERT INTO monthly_commitments (month, planned_amount, notes, updated_at)
+      VALUES (${item.month}, ${amt}, ${n}, NOW())
+      ON CONFLICT (month) DO UPDATE SET
+        planned_amount = EXCLUDED.planned_amount,
+        notes = EXCLUDED.notes,
+        updated_at = NOW()
+    `;
+  }
+  return getMonthlyCommitments();
+}

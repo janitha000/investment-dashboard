@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { getMonthlyCommitments, saveMonthlyCommitment } from "@/lib/db";
+import { getMonthlyCommitments, saveMonthlyCommitment, saveBatchMonthlyCommitments } from "@/lib/db";
 
 export async function GET() {
   const denied = await requireAuth();
@@ -19,6 +19,18 @@ export async function POST(req: NextRequest) {
   if (denied) return denied;
   try {
     const body = await req.json();
+
+    // Batch save
+    if (Array.isArray(body)) {
+      const saved = await saveBatchMonthlyCommitments(body);
+      return NextResponse.json({ ok: true, commitments: saved });
+    }
+    if (Array.isArray(body?.commitments)) {
+      const saved = await saveBatchMonthlyCommitments(body.commitments);
+      return NextResponse.json({ ok: true, commitments: saved });
+    }
+
+    // Single save
     if (!body?.month) {
       return NextResponse.json({ error: "Month is required (YYYY-MM)" }, { status: 400 });
     }

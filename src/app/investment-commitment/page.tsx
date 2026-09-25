@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -39,6 +41,10 @@ import {
   BarChart3,
   CheckCircle2,
   AlertCircle,
+  Plus,
+  Sliders,
+  Save,
+  HelpCircle,
 } from "lucide-react";
 
 type CategoryTotals = {
@@ -262,13 +268,39 @@ export default function InvestmentCommitmentPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Tab View
-  const [activeTab, setActiveTab] = useState<"snapshots" | "monthly">("snapshots");
+  const [activeTab, setActiveTab] = useState<"snapshots" | "monthly" | "plan">("snapshots");
 
   // Monthly View State
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>("");
   const [plannedInput, setPlannedInput] = useState<string>("");
   const [savingCommitment, setSavingCommitment] = useState(false);
   const [commitmentSavedSuccess, setCommitmentSavedSuccess] = useState(false);
+
+  // Add Custom Snapshot Modal State
+  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [customLabel, setCustomLabel] = useState("");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [customTotalWealth, setCustomTotalWealth] = useState("");
+  const [customAddFds, setCustomAddFds] = useState("");
+  const [customAddUts, setCustomAddUts] = useState("");
+  const [customAddTreasury, setCustomAddTreasury] = useState("");
+  const [customAddDividends, setCustomAddDividends] = useState("");
+  const [customAddPfcaFds, setCustomAddPfcaFds] = useState("");
+  const [customAddGross, setCustomAddGross] = useState("");
+  const [customAddNetIit, setCustomAddNetIit] = useState("");
+  const [customAddCash, setCustomAddCash] = useState("");
+  const [savingCustomSnapshot, setSavingCustomSnapshot] = useState(false);
+  const [customSuccess, setCustomSuccess] = useState(false);
+
+  // Investment Plan & Wealth Timeline State
+  const [planHorizonMonths, setPlanHorizonMonths] = useState<number>(12);
+  const [planAnnualReturnRate, setPlanAnnualReturnRate] = useState<string>("12.0");
+  const [planStartingCapital, setPlanStartingCapital] = useState<string>("");
+  const [planDefaultAddition, setPlanDefaultAddition] = useState<string>("1000000");
+  const [customPlanAmounts, setCustomPlanAmounts] = useState<Record<string, string>>({});
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [planSaveSuccess, setPlanSaveSuccess] = useState(false);
 
   // Edit Snapshot Dates Modal State
   const [editingSnapshot, setEditingSnapshot] = useState<SnapshotRow | null>(null);
@@ -690,12 +722,230 @@ export default function InvestmentCommitmentPage() {
     }
   };
 
+  // Create new Custom Snapshot
+  const handleCreateCustomSnapshot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customEndDate) {
+      alert("Please provide an end date for the snapshot");
+      return;
+    }
+    setSavingCustomSnapshot(true);
+    try {
+      const fdsVal = parseFloat(customAddFds) || 0;
+      const utsVal = parseFloat(customAddUts) || 0;
+      const trVal = parseFloat(customAddTreasury) || 0;
+      const divVal = parseFloat(customAddDividends) || 0;
+      const pfcaVal = parseFloat(customAddPfcaFds) || 0;
+      const grossVal = parseFloat(customAddGross) || 0;
+      const netIitVal = parseFloat(customAddNetIit) || grossVal;
+      const cashVal = parseFloat(customAddCash) || grossVal;
+
+      const totalAdds = fdsVal + utsVal + trVal + divVal + pfcaVal;
+      const latestInvested = chartData.length > 0 ? chartData[chartData.length - 1].invested : 0;
+      const totalWealthNum = customTotalWealth ? (parseFloat(customTotalWealth) || 0) : (latestInvested + totalAdds);
+
+      const now = Date.now();
+      const snapPayload = {
+        id: String(now),
+        timestamp: new Date(customEndDate).toISOString(),
+        label: customLabel.trim() || new Date(customEndDate).toLocaleDateString("en-LK", { month: "short", day: "numeric", year: "2-digit" }),
+        portfolio: {
+          fds: [],
+          uts: [],
+          treasury: [],
+          dividends: [],
+          pfcaFds: [],
+          stocks: [],
+        },
+        totals: {
+          invested: totalWealthNum,
+          investedByCategory: {
+            fds: fdsVal,
+            uts: utsVal,
+            treasury: trVal,
+            dividends: divVal,
+            pfcaFds: pfcaVal,
+          },
+          gross: grossVal,
+          netWht: grossVal,
+          netIit: netIitVal,
+          physicalCash: cashVal,
+          startDate: customStartDate || customEndDate,
+          endDate: customEndDate,
+          additions: {
+            invested: totalAdds,
+            fds: fdsVal,
+            uts: utsVal,
+            treasury: trVal,
+            dividends: divVal,
+            pfcaFds: pfcaVal,
+            gross: grossVal,
+            netIit: netIitVal,
+            physicalCash: cashVal,
+          },
+        },
+      };
+
+      const res = await fetch("/api/snapshots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snapPayload),
+      });
+
+      if (!res.ok) throw new Error("Failed to create snapshot");
+      setCustomSuccess(true);
+      await fetchSnapshotsAndCommitments();
+      setTimeout(() => {
+        setShowAddCustomModal(false);
+        setCustomSuccess(false);
+        setCustomLabel("");
+        setCustomStartDate("");
+        setCustomEndDate("");
+        setCustomTotalWealth("");
+        setCustomAddFds("");
+        setCustomAddUts("");
+        setCustomAddTreasury("");
+        setCustomAddDividends("");
+        setCustomAddPfcaFds("");
+        setCustomAddGross("");
+        setCustomAddNetIit("");
+        setCustomAddCash("");
+      }, 500);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Failed to create snapshot");
+    } finally {
+      setSavingCustomSnapshot(false);
+    }
+  };
+
   const latestWealth = chartData.length > 0 ? chartData[chartData.length - 1].invested : 0;
   const latestDelta = snapshotDeltas.length > 0 ? snapshotDeltas[snapshotDeltas.length - 1].investedDelta : 0;
   const totalMonths = monthlyInvestments.length;
   const avgMonthlyAddition = totalMonths > 0
     ? monthlyInvestments.reduce((sum, m) => sum + m.totalDelta, 0) / totalMonths
     : 0;
+
+  // Wealth Timeline & Projection Data for Plan Tab
+  const planTimelineData = useMemo(() => {
+    const startCap = Number(planStartingCapital) > 0 ? Number(planStartingCapital) : (latestWealth || 58000000);
+    const annualRate = Number(planAnnualReturnRate) >= 0 ? Number(planAnnualReturnRate) : 12.0;
+    const monthlyRate = (annualRate / 100) / 12;
+    const defaultAdd = Number(planDefaultAddition) >= 0 ? Number(planDefaultAddition) : 1000000;
+
+    // Determine starting date (next month after latest snapshot)
+    let startDateObj = new Date();
+    if (chronological.length > 0) {
+      const lastSnap = chronological[chronological.length - 1];
+      const lastEnd = (lastSnap.totals as any)?.endDate || lastSnap.timestamp;
+      const d = new Date(lastEnd);
+      if (!isNaN(d.getTime())) {
+        startDateObj = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      }
+    }
+
+    const timeline: Array<{
+      monthIndex: number;
+      monthKey: string;
+      monthLabel: string;
+      startingWealth: number;
+      plannedAddition: number;
+      cumulativeAdditions: number;
+      monthlyYield: number;
+      cumulativeYield: number;
+      projectedTotalWealth: number;
+      totalGain: number;
+    }> = [];
+
+    let currentWealth = startCap;
+    let cumAdditions = 0;
+    let cumYield = 0;
+
+    for (let i = 0; i < planHorizonMonths; i++) {
+      const mDate = new Date(startDateObj.getFullYear(), startDateObj.getMonth() + i, 1);
+      const yearMonth = `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, "0")}`;
+      const monthLabel = mDate.toLocaleDateString("en-LK", { month: "short", year: "numeric" });
+
+      const customVal = customPlanAmounts[yearMonth];
+      const existingSaved = commitments[yearMonth]?.plannedAmount;
+      const plannedAddition = customVal !== undefined && customVal !== ""
+        ? Math.max(0, Number(customVal) || 0)
+        : existingSaved !== undefined && existingSaved !== null
+          ? existingSaved
+          : defaultAdd;
+
+      const startingWealth = currentWealth;
+      const monthlyYield = (startingWealth + plannedAddition / 2) * monthlyRate;
+      currentWealth = startingWealth + plannedAddition + monthlyYield;
+      cumAdditions += plannedAddition;
+      cumYield += monthlyYield;
+
+      const totalGain = currentWealth - startCap;
+
+      timeline.push({
+        monthIndex: i + 1,
+        monthKey: yearMonth,
+        monthLabel,
+        startingWealth,
+        plannedAddition,
+        cumulativeAdditions: cumAdditions,
+        monthlyYield,
+        cumulativeYield: cumYield,
+        projectedTotalWealth: currentWealth,
+        totalGain,
+      });
+    }
+
+    return {
+      startCap,
+      annualRate,
+      defaultAdd,
+      timeline,
+      targetEndWealth: currentWealth,
+      totalAdded: cumAdditions,
+      totalYieldEarned: cumYield,
+      totalGrowthPct: startCap > 0 ? ((currentWealth - startCap) / startCap) * 100 : 0,
+    };
+  }, [
+    planStartingCapital,
+    latestWealth,
+    planAnnualReturnRate,
+    planDefaultAddition,
+    planHorizonMonths,
+    chronological,
+    customPlanAmounts,
+    commitments,
+  ]);
+
+  // Save all upcoming planned amounts to database batch
+  const handleSavePlan = async () => {
+    setSavingPlan(true);
+    try {
+      const itemsToSave = planTimelineData.timeline.map((item) => ({
+        month: item.monthKey,
+        plannedAmount: item.plannedAddition,
+      }));
+
+      const res = await fetch("/api/commitments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(itemsToSave),
+      });
+
+      if (!res.ok) throw new Error("Failed to save plan commitments");
+      const data = await res.json();
+      if (data.commitments) {
+        setCommitments(data.commitments);
+      }
+      setPlanSaveSuccess(true);
+      setTimeout(() => setPlanSaveSuccess(false), 2500);
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : "Failed to save plan");
+    } finally {
+      setSavingPlan(false);
+    }
+  };
 
   return (
     <div className="history-page">
@@ -728,7 +978,22 @@ export default function InvestmentCommitmentPage() {
               <Calendar size={14} />
               <span>Monthly View</span>
             </button>
+            <button
+              className={`hist-tab-btn ${activeTab === "plan" ? "active" : ""}`}
+              onClick={() => setActiveTab("plan")}
+            >
+              <Sparkles size={14} />
+              <span>Investment Plan & Timeline</span>
+            </button>
           </div>
+
+          <button
+            onClick={() => setShowAddCustomModal(true)}
+            className="btn-custom-snapshot-hdr"
+          >
+            <Plus size={14} />
+            <span>Add Custom Snapshot</span>
+          </button>
 
           <Link href="/history" className="hist-btn-secondary">
             <HistoryIcon size={15} />
@@ -1328,6 +1593,523 @@ export default function InvestmentCommitmentPage() {
               )}
             </div>
           )}
+
+          {/* ════════════════════ TAB 3: INVESTMENT PLAN & WEALTH TIMELINE ════════════════════ */}
+          {activeTab === "plan" && (
+            <div className="plan-timeline-view">
+              {/* Plan Configuration & Parameter Bar */}
+              <div className="glass-card plan-controls-card">
+                <div className="plan-controls-hdr">
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Sliders size={18} color="#38bdf8" />
+                      <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Investment Plan & Wealth Projection Parameters</h3>
+                    </div>
+                    <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#9ca3af" }}>
+                      Model your future portfolio growth by customizing upcoming monthly additions, horizon, and compound return yield.
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <button
+                      type="button"
+                      onClick={handleSavePlan}
+                      disabled={savingPlan}
+                      className="btn-save-plan"
+                    >
+                      {planSaveSuccess ? (
+                        <>
+                          <Check size={15} color="#10b981" />
+                          <span>Plan Saved to DB!</span>
+                        </>
+                      ) : savingPlan ? (
+                        <span>Saving Plan...</span>
+                      ) : (
+                        <>
+                          <Save size={15} />
+                          <span>Save All Planned Amounts</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="plan-param-grid">
+                  <div className="plan-param-group">
+                    <label>Starting Portfolio Capital (LKR)</label>
+                    <div className="input-affix-wrap">
+                      <span className="affix">Rs.</span>
+                      <input
+                        type="number"
+                        step="500000"
+                        value={planStartingCapital}
+                        onChange={(e) => setPlanStartingCapital(e.target.value)}
+                        placeholder={String(latestWealth)}
+                        className="plan-num-input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="plan-param-group">
+                    <label>Expected Annual Return Rate (%)</label>
+                    <div className="input-affix-wrap">
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0"
+                        max="50"
+                        value={planAnnualReturnRate}
+                        onChange={(e) => setPlanAnnualReturnRate(e.target.value)}
+                        className="plan-num-input"
+                      />
+                      <span className="affix-right">% p.a.</span>
+                    </div>
+                  </div>
+
+                  <div className="plan-param-group">
+                    <label>Default Monthly Addition (LKR)</label>
+                    <div className="input-affix-wrap">
+                      <span className="affix">Rs.</span>
+                      <input
+                        type="number"
+                        step="50000"
+                        value={planDefaultAddition}
+                        onChange={(e) => setPlanDefaultAddition(e.target.value)}
+                        placeholder="1000000"
+                        className="plan-num-input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="plan-param-group">
+                    <label>Projection Horizon</label>
+                    <div className="horizon-pills">
+                      {[6, 12, 24, 36, 60].map((h) => (
+                        <button
+                          key={h}
+                          type="button"
+                          className={`horizon-pill ${planHorizonMonths === h ? "active" : ""}`}
+                          onClick={() => setPlanHorizonMonths(h)}
+                        >
+                          {h < 12 ? `${h}M` : `${h / 12}Y`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Plan KPI Cards */}
+              <div className="grid-summary" style={{ marginTop: "1rem" }}>
+                <div className="glass-card kpi-card" style={{ borderColor: "rgba(0, 242, 254, 0.3)" }}>
+                  <span className="kpi-label">Projected End Wealth ({planHorizonMonths}M)</span>
+                  <div className="kpi-value text-glow" style={{ color: "#00f2fe" }}>
+                    {formatLKR(planTimelineData.targetEndWealth)}
+                  </div>
+                  <span className="kpi-sub">Starting {formatCompact(planTimelineData.startCap)}</span>
+                </div>
+
+                <div className="glass-card kpi-card">
+                  <span className="kpi-label">Total Capital to Deploy</span>
+                  <div className="kpi-value text-cyan">
+                    +{formatLKR(planTimelineData.totalAdded)}
+                  </div>
+                  <span className="kpi-sub">Across {planHorizonMonths} planned additions</span>
+                </div>
+
+                <div className="glass-card kpi-card">
+                  <span className="kpi-label">Estimated Compound Yield</span>
+                  <div className="kpi-value text-emerald">
+                    +{formatLKR(planTimelineData.totalYieldEarned)}
+                  </div>
+                  <span className="kpi-sub">At {planTimelineData.annualRate}% annual return</span>
+                </div>
+
+                <div className="glass-card kpi-card">
+                  <span className="kpi-label">Total Projected Growth</span>
+                  <div className="kpi-value text-indigo">
+                    +{planTimelineData.totalGrowthPct.toFixed(1)}%
+                  </div>
+                  <span className="kpi-sub">Gain of {formatLKR(planTimelineData.targetEndWealth - planTimelineData.startCap)}</span>
+                </div>
+              </div>
+
+              {/* Wealth Trajectory Timeline Chart */}
+              <div className="glass-card hist-chart-card" style={{ marginTop: "1.25rem" }}>
+                <div className="hist-chart-hdr">
+                  <div>
+                    <h3>Portfolio Wealth Growth Trajectory</h3>
+                    <p>
+                      Projected portfolio value combining starting capital, your planned monthly additions, and compounded reinvestment yields over the next {planHorizonMonths} months.
+                    </p>
+                  </div>
+                  <Sparkles size={18} className="hist-chart-icon" color="#00f2fe" />
+                </div>
+
+                <div className="hist-chart-wrap">
+                  <ResponsiveContainer width="100%" height={360}>
+                    <AreaChart data={planTimelineData.timeline} margin={{ top: 12, right: 16, left: 8, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="wealthGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#00f2fe" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#00f2fe" stopOpacity={0.0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+                      <XAxis dataKey="monthLabel" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                      <YAxis
+                        tick={{ fill: "#9ca3af", fontSize: 11 }}
+                        tickFormatter={formatCompact}
+                        domain={['dataMin - 1000000', 'dataMax + 1000000']}
+                      />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const d = payload[0]?.payload;
+                          if (!d) return null;
+                          return (
+                            <div
+                              style={{
+                                background: "rgba(10, 15, 29, 0.95)",
+                                border: "1px solid rgba(0, 242, 254, 0.3)",
+                                borderRadius: "8px",
+                                padding: "10px 14px",
+                                boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+                              }}
+                            >
+                              <div style={{ color: "#fff", fontWeight: 700, marginBottom: 6 }}>
+                                {d.monthLabel} (Month {d.monthIndex})
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.8rem", color: "#00f2fe", fontWeight: 700 }}>
+                                <span>Projected Total Wealth:</span>
+                                <span>{formatLKR(d.projectedTotalWealth)}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#9ca3af", marginTop: 4 }}>
+                                <span>Planned Addition:</span>
+                                <span style={{ color: "#fff" }}>{formatLKR(d.plannedAddition)}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#10b981", marginTop: 2 }}>
+                                <span>Estimated Month Yield:</span>
+                                <span>+{formatLKR(d.monthlyYield)}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#38bdf8", marginTop: 2 }}>
+                                <span>Cumulative Capital Added:</span>
+                                <span>+{formatLKR(d.cumulativeAdditions)}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.76rem", color: "#818cf8", marginTop: 2, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 4 }}>
+                                <span>Total Gain from Start:</span>
+                                <span>+{formatLKR(d.totalGain)}</span>
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} />
+                      <Area
+                        type="monotone"
+                        dataKey="projectedTotalWealth"
+                        name="Projected Total Wealth"
+                        stroke="#00f2fe"
+                        strokeWidth={2.5}
+                        fillOpacity={1}
+                        fill="url(#wealthGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Upcoming Month-by-Month Editable Ledger Table */}
+              <div className="glass-card hist-chart-card" style={{ marginTop: "1.25rem" }}>
+                <div className="hist-chart-hdr">
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <h3>Upcoming Monthly Investment Schedule &amp; Timeline Ledger</h3>
+                      <span className="hist-badge-pill" style={{ color: "#38bdf8" }}>
+                        {planHorizonMonths} Upcoming Months
+                      </span>
+                    </div>
+                    <p>
+                      Customize your planned investment additions for each individual month. Values auto-compound into your projected total wealth.
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={handleSavePlan}
+                      disabled={savingPlan}
+                      className="btn-save-plan"
+                      style={{ padding: "6px 12px", fontSize: "0.78rem" }}
+                    >
+                      {planSaveSuccess ? (
+                        <>
+                          <Check size={14} color="#10b981" />
+                          <span>Saved!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save size={14} />
+                          <span>Save All</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="hist-delta-scroll">
+                  <table className="hist-delta-tbl">
+                    <thead>
+                      <tr>
+                        <th className="hdt-left">Month</th>
+                        <th style={{ textAlign: "left", width: "210px", color: "#38bdf8" }}>
+                          Planned Addition (LKR)
+                        </th>
+                        <th style={{ textAlign: "right", color: "#00f2fe" }}>Cumulative Added</th>
+                        <th style={{ textAlign: "right", color: "#10b981" }}>Est. Monthly Yield</th>
+                        <th style={{ textAlign: "right", color: "#818cf8" }}>Cumulative Yield</th>
+                        <th className="hdt-col-wealth" style={{ textAlign: "right" }}>Projected Wealth</th>
+                        <th style={{ textAlign: "right", color: "#34d399" }}>Total Gain</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planTimelineData.timeline.map((item) => {
+                        const currentInputVal =
+                          customPlanAmounts[item.monthKey] !== undefined
+                            ? customPlanAmounts[item.monthKey]
+                            : String(item.plannedAddition);
+
+                        return (
+                          <tr key={item.monthKey}>
+                            <td className="hdt-left">
+                              <strong>{item.monthLabel}</strong>
+                              <span style={{ fontSize: "0.7rem", color: "#6b7280", marginLeft: 6 }}>
+                                (M{item.monthIndex})
+                              </span>
+                            </td>
+                            <td style={{ textAlign: "left" }}>
+                              <div className="table-input-wrap">
+                                <span className="table-affix">Rs.</span>
+                                <input
+                                  type="number"
+                                  step="50000"
+                                  min="0"
+                                  value={currentInputVal}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCustomPlanAmounts((prev) => ({
+                                      ...prev,
+                                      [item.monthKey]: val,
+                                    }));
+                                  }}
+                                  className="plan-cell-input"
+                                  placeholder={String(planDefaultAddition)}
+                                />
+                              </div>
+                            </td>
+                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#00f2fe" }}>
+                              +{formatCompact(item.cumulativeAdditions)}
+                            </td>
+                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#10b981" }}>
+                              +{formatLKR(item.monthlyYield)}
+                            </td>
+                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#818cf8" }}>
+                              +{formatCompact(item.cumulativeYield)}
+                            </td>
+                            <td className="hdt-wealth-cell" style={{ textAlign: "right", color: "#fff", fontWeight: 700 }}>
+                              {formatLKR(item.projectedTotalWealth)}
+                            </td>
+                            <td style={{ textAlign: "right", fontFamily: "var(--font-mono)", color: "#34d399", fontWeight: 700 }}>
+                              +{formatCompact(item.totalGain)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Add Custom Snapshot Modal Dialog ── */}
+      {showAddCustomModal && (
+        <div className="modal-overlay" onClick={() => !savingCustomSnapshot && setShowAddCustomModal(false)}>
+          <div className="modal-card" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="modal-icon-wrap" style={{ background: "rgba(16, 185, 129, 0.1)", borderColor: "rgba(16, 185, 129, 0.25)" }}>
+                  <Plus size={18} color="#10b981" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#fff" }}>Add Custom Progress Snapshot</h3>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#9ca3af" }}>
+                    Manually specify additions and capital progress for a specific statement period
+                  </p>
+                </div>
+              </div>
+              <button
+                className="modal-close-btn"
+                onClick={() => setShowAddCustomModal(false)}
+                disabled={savingCustomSnapshot}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCustomSnapshot} className="modal-form">
+              <div className="form-group">
+                <label>Snapshot Label (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. End August 2026 or Special Injection"
+                  value={customLabel}
+                  onChange={(e) => setCustomLabel(e.target.value)}
+                  className="modal-input"
+                />
+              </div>
+
+              <div className="form-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="form-group">
+                  <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Clock size={12} color="#00f2fe" />
+                    <span>Period Start Date</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="modal-input"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <Clock size={12} color="#10b981" />
+                    <span>Period End Date (As Of) *</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="modal-input"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>Total Portfolio Wealth (Optional)</span>
+                  <span style={{ fontSize: "0.7rem", color: "#6b7280" }}>Defaults to latest + additions</span>
+                </label>
+                <input
+                  type="number"
+                  placeholder={`e.g. ${latestWealth > 0 ? latestWealth : 58000000}`}
+                  value={customTotalWealth}
+                  onChange={(e) => setCustomTotalWealth(e.target.value)}
+                  className="modal-input"
+                />
+              </div>
+
+              <div style={{ marginTop: 8, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <label style={{ fontSize: "0.85rem", fontWeight: 700, color: "#f3f4f6", display: "flex", alignItems: "center", gap: 6 }}>
+                    <TrendingUp size={14} color="#10b981" />
+                    <span>Capital Additions Deployed in this Period (LKR)</span>
+                  </label>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div className="form-group">
+                    <label style={{ color: "#00f2fe", fontSize: "0.76rem" }}>Fixed Deposits (FDs)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 0"
+                      value={customAddFds}
+                      onChange={(e) => setCustomAddFds(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ color: "#10b981", fontSize: "0.76rem" }}>Unit Trusts (UTs)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 0"
+                      value={customAddUts}
+                      onChange={(e) => setCustomAddUts(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ color: "#818cf8", fontSize: "0.76rem" }}>Treasury Bills</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 0"
+                      value={customAddTreasury}
+                      onChange={(e) => setCustomAddTreasury(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ color: "#6366f1", fontSize: "0.76rem" }}>Dividends Reinvested</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 100000"
+                      value={customAddDividends}
+                      onChange={(e) => setCustomAddDividends(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ gridColumn: "1 / span 2" }}>
+                    <label style={{ color: "#f43f5e", fontSize: "0.76rem" }}>PFCA FDs Added</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 500000"
+                      value={customAddPfcaFds}
+                      onChange={(e) => setCustomAddPfcaFds(e.target.value)}
+                      className="modal-input"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setShowAddCustomModal(false)}
+                  disabled={savingCustomSnapshot}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCustomSnapshot}
+                  className="btn-primary"
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "linear-gradient(135deg, #10b981, #059669)", color: "#fff" }}
+                >
+                  {customSuccess ? (
+                    <>
+                      <Check size={16} color="#fff" />
+                      <span>Snapshot Added!</span>
+                    </>
+                  ) : savingCustomSnapshot ? (
+                    <span>Creating...</span>
+                  ) : (
+                    <>
+                      <Plus size={16} />
+                      <span>Create Snapshot</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -2346,6 +3128,208 @@ export default function InvestmentCommitmentPage() {
 
         .btn-primary:hover {
           opacity: 0.9;
+        }
+
+        .btn-custom-snapshot-hdr {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          border-radius: 8px;
+          background: rgba(16, 185, 129, 0.12);
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          color: #34d399;
+          font-size: 0.8rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .btn-custom-snapshot-hdr:hover {
+          background: rgba(16, 185, 129, 0.22);
+          border-color: #10b981;
+          color: #fff;
+        }
+
+        /* ── Plan & Timeline View ── */
+        .plan-timeline-view {
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        .plan-controls-card {
+          padding: 1.25rem 1.5rem;
+          border-radius: 12px;
+          background: rgba(15, 23, 42, 0.65);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        .plan-controls-hdr {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 1rem;
+        }
+
+        .btn-save-plan {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 16px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #00f2fe, #3b82f6);
+          border: none;
+          color: #000;
+          font-size: 0.82rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .btn-save-plan:hover:not(:disabled) {
+          opacity: 0.92;
+          transform: translateY(-1px);
+        }
+
+        .btn-save-plan:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .plan-param-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 1.25rem;
+          padding-top: 1rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .plan-param-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .plan-param-group label {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #94a3b8;
+        }
+
+        .input-affix-wrap {
+          display: flex;
+          align-items: center;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          overflow: hidden;
+          transition: border-color 0.2s;
+        }
+
+        .input-affix-wrap:focus-within {
+          border-color: #00f2fe;
+          background: rgba(0, 242, 254, 0.03);
+        }
+
+        .affix {
+          padding: 0 10px;
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: #64748b;
+          user-select: none;
+        }
+
+        .affix-right {
+          padding: 0 10px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #64748b;
+          user-select: none;
+          white-space: nowrap;
+        }
+
+        .plan-num-input {
+          flex: 1;
+          padding: 8px 10px;
+          background: transparent;
+          border: none;
+          outline: none;
+          color: #fff;
+          font-size: 0.9rem;
+          font-weight: 700;
+          font-family: var(--font-mono);
+          min-width: 0;
+        }
+
+        .horizon-pills {
+          display: flex;
+          gap: 6px;
+        }
+
+        .horizon-pill {
+          flex: 1;
+          padding: 8px 0;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          color: #94a3b8;
+          font-size: 0.78rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: center;
+        }
+
+        .horizon-pill:hover {
+          background: rgba(255, 255, 255, 0.08);
+          color: #fff;
+        }
+
+        .horizon-pill.active {
+          background: rgba(0, 242, 254, 0.15);
+          border-color: #00f2fe;
+          color: #00f2fe;
+        }
+
+        /* ── Table Inline Inputs ── */
+        .table-input-wrap {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 6px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          overflow: hidden;
+          max-width: 170px;
+          transition: border-color 0.2s;
+        }
+
+        .table-input-wrap:focus-within {
+          border-color: #38bdf8;
+          background: rgba(56, 189, 248, 0.05);
+        }
+
+        .table-affix {
+          padding-left: 8px;
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: #64748b;
+        }
+
+        .plan-cell-input {
+          width: 100%;
+          padding: 4px 8px;
+          background: transparent;
+          border: none;
+          outline: none;
+          color: #38bdf8;
+          font-size: 0.82rem;
+          font-weight: 700;
+          font-family: var(--font-mono);
         }
 
         .hist-loading,
