@@ -908,8 +908,8 @@ export default function InvestmentCommitmentPage() {
 
       const hasActualData = monthlyDataMap.has(yearMonth);
       const actualData = monthlyDataMap.get(yearMonth);
-      const isPassed = hasActualData || yearMonth < nowYearMonth;
       const isCurrent = yearMonth === nowYearMonth;
+      const isPassed = yearMonth < nowYearMonth;
 
       const customVal = customPlanAmounts[yearMonth];
       const existingSaved = commitments[yearMonth]?.plannedAmount;
@@ -1825,12 +1825,12 @@ export default function InvestmentCommitmentPage() {
                                     fontSize: "0.68rem",
                                     padding: "2px 6px",
                                     borderRadius: "4px",
-                                    background: d.isPassed ? "rgba(16, 185, 129, 0.2)" : "rgba(56, 189, 248, 0.2)",
-                                    color: d.isPassed ? "#34d399" : "#38bdf8",
+                                    background: d.isCurrent ? "rgba(56, 189, 248, 0.2)" : d.isPassed ? "rgba(16, 185, 129, 0.2)" : "rgba(255, 255, 255, 0.08)",
+                                    color: d.isCurrent ? "#38bdf8" : d.isPassed ? "#34d399" : "#9ca3af",
                                     fontWeight: 700,
                                   }}
                                 >
-                                  {d.isPassed ? "Realized / Passed" : "Future Projection"}
+                                  {d.isCurrent ? "Current Month" : d.isPassed ? "Realized / Passed" : "Future Projection"}
                                 </span>
                               </div>
                               {d.chartActualWealth !== null && (
@@ -1923,7 +1923,7 @@ export default function InvestmentCommitmentPage() {
                               }}
                             >
                               <div style={{ color: "#fff", fontWeight: 700, marginBottom: 6 }}>
-                                {d.monthLabel} {d.isPassed ? "(Passed)" : "(Upcoming)"}
+                                {d.monthLabel} {d.isCurrent ? "(Current)" : d.isPassed ? "(Passed)" : "(Upcoming)"}
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: "0.8rem", color: "#38bdf8", fontWeight: 700 }}>
                                 <span>Planned Target:</span>
@@ -2041,20 +2041,7 @@ export default function InvestmentCommitmentPage() {
                             <td className="hdt-left">
                               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <strong>{item.monthLabel}</strong>
-                                {isPassed ? (
-                                  <span
-                                    style={{
-                                      fontSize: "0.65rem",
-                                      padding: "1px 6px",
-                                      borderRadius: "4px",
-                                      background: "rgba(16, 185, 129, 0.15)",
-                                      color: "#34d399",
-                                      fontWeight: 700,
-                                    }}
-                                  >
-                                    Passed
-                                  </span>
-                                ) : item.isCurrent ? (
+                                {item.isCurrent ? (
                                   <span
                                     style={{
                                       fontSize: "0.65rem",
@@ -2066,6 +2053,19 @@ export default function InvestmentCommitmentPage() {
                                     }}
                                   >
                                     Current
+                                  </span>
+                                ) : isPassed ? (
+                                  <span
+                                    style={{
+                                      fontSize: "0.65rem",
+                                      padding: "1px 6px",
+                                      borderRadius: "4px",
+                                      background: "rgba(16, 185, 129, 0.15)",
+                                      color: "#34d399",
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    Passed
                                   </span>
                                 ) : (
                                   <span
@@ -2113,8 +2113,8 @@ export default function InvestmentCommitmentPage() {
                                   style={{ whiteSpace: "nowrap" }}
                                 >
                                   {item.isAchieved
-                                    ? `✓ Achieved (${item.pctAchieved?.toFixed(0)}%)`
-                                    : `Shortfall (${item.pctAchieved?.toFixed(0)}%)`}
+                                    ? `✓ Achieved (+${formatLKR(Math.abs(item.variance))})`
+                                    : `Shortfall (-${formatLKR(Math.abs(item.variance))})`}
                                 </span>
                               ) : (
                                 <span style={{ fontSize: "0.72rem", color: "#9ca3af" }}>
