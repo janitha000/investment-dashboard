@@ -398,6 +398,8 @@ export default function InvestmentCommitmentPage() {
   /** All snapshots with progress deltas */
   const allSnapshotRows: SnapshotDelta[] = useMemo(() => {
     if (!chartData.length) return [];
+    let runningWealth = 0;
+
     return chartData.map((cur, i) => {
       const adds = cur.additions;
 
@@ -413,6 +415,8 @@ export default function InvestmentCommitmentPage() {
         const netIitDelta = adds?.netIit !== undefined ? adds.netIit : 0;
         const physicalDelta = adds?.physicalCash !== undefined ? adds.physicalCash : 0;
 
+        runningWealth = cur.invested;
+
         return {
           snapshotId: cur.id,
           from: "Start",
@@ -424,7 +428,7 @@ export default function InvestmentCommitmentPage() {
           netIitDelta,
           physicalDelta,
           investedDelta,
-          totalWealth: cur.invested,
+          totalWealth: runningWealth,
           fdsDelta,
           utsDelta,
           treasuryDelta,
@@ -445,6 +449,12 @@ export default function InvestmentCommitmentPage() {
       const netIitDelta = adds?.netIit !== undefined ? adds.netIit : (cur.netIitMonthly - prev.netIitMonthly);
       const physicalDelta = adds?.physicalCash !== undefined ? adds.physicalCash : (cur.physicalCashMonthly - prev.physicalCashMonthly);
 
+      if (adds?.invested !== undefined) {
+        runningWealth += investedDelta;
+      } else {
+        runningWealth = cur.invested;
+      }
+
       return {
         snapshotId: cur.id,
         from: prev.label,
@@ -456,7 +466,7 @@ export default function InvestmentCommitmentPage() {
         netIitDelta,
         physicalDelta,
         investedDelta,
-        totalWealth: cur.invested,
+        totalWealth: runningWealth,
         fdsDelta,
         utsDelta,
         treasuryDelta,
@@ -911,7 +921,7 @@ export default function InvestmentCommitmentPage() {
 
       const startingWealth = currentWealth;
       const actualAddition = hasActualData && actualData ? actualData.totalDelta : null;
-      const actualEndWealth = hasActualData && actualData ? actualData.endWealth : null;
+      const actualEndWealth = hasActualData && actualAddition !== null ? (startingWealth + actualAddition) : null;
 
       let variance: number | null = null;
       let pctAchieved: number | null = null;
